@@ -1,0 +1,13 @@
+{
+  "organization": {
+    "id": "123456789012",
+    "domain": "example-bank.se"
+  },
+  "folders": [
+    { "id": "fld-shared", "display_name": "Shared Services", "parent": "organizations/123456789012" },
+    { "id": "fld-security", "display_name": "Security", "parent": "organizations/123456789012" },
+    { "id": "fld-workloads", "display_name": "Workloads", "parent": "organizations/123456789012" },
+    { "id": "fld-workloads-prod", "display_name": "Production", "parent": "folders/fld-workloads" },
+    { "id": "fld-workloads-nonprod", "display_name": "Non-Production", "parent": "folders/fld-workloads" }
+  ]
+}

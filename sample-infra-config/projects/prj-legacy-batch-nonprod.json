@@ -1,0 +1,37 @@
+{
+  "project": {
+    "id": "prj-legacy-batch-nonprod",
+    "name": "Legacy Batch Non-Prod",
+    "folder": "fld-workloads-nonprod",
+    "billing_account": "01ABCD-EFGH23-456789",
+    "labels": { "env": "nonprod", "owner": "legacy-team", "cost-center": "cc-4000" },
+    "apis": ["compute.googleapis.com", "storage.googleapis.com"]
+  },
+  "networks": [
+    {
+      "name": "vpc-legacy-nonprod",
+      "routing_mode": "REGIONAL",
+      "shared_vpc_host": false,
+      "subnets": [
+        { "name": "sn-legacy-eu-north1", "region": "europe-north1", "cidr": "192.168.10.0/24", "private_google_access": false, "flow_logs": false }
+      ],
+      "peerings": []
+    }
+  ],
+  "firewall_rules": [
+    { "name": "fw-legacy-allow-all", "network": "vpc-legacy-nonprod", "direction": "INGRESS", "action": "allow", "priority": 100,
+      "source_ranges": ["0.0.0.0/0"], "rules": [{ "protocol": "all" }], "logging": false, "description": "Inherited from migration, never cleaned up" },
+    { "name": "fw-legacy-allow-ssh", "network": "vpc-legacy-nonprod", "direction": "INGRESS", "action": "allow", "priority": 1000,
+      "source_ranges": ["0.0.0.0/0"], "rules": [{ "protocol": "tcp", "ports": ["22"] }], "logging": false }
+  ],
+  "iam": {
+    "bindings": [
+      { "role": "roles/owner", "members": ["user:old.admin@example-bank.se", "group:gcp-legacy-team@example-bank.se"] },
+      { "role": "roles/iam.serviceAccountKeyAdmin", "members": ["group:gcp-legacy-team@example-bank.se"] }
+    ]
+  },
+  "service_accounts": [
+    { "account_id": "sa-vendor-sync", "display_name": "Vendor file sync (uses SA key)", "project_roles": ["roles/storage.admin"] }
+  ],
+  "workload_identity": { "pools": [] }
+}

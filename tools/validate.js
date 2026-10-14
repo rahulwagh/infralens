@@ -1,0 +1,64 @@
+#!/usr/bin/env node
+/*
+ * Runs an adapter against a config folder outside the browser and prints what it
+ * extracted. Use it here (or anywhere Node exists) to check adapter changes fast.
+ *
+ *   node tools/validate.js <config-folder> [adapter.js]
+ */
+const fs = require('fs');
+const path = require('path');
+
+const folder = process.argv[2] || path.join(__dirname, '..', 'sample-infra-config');
+const adapterPath = process.argv[3] || path.join(__dirname, '..', 'adapters', 'default.js');
+const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md']);
+
+function readTree(dir, prefix = '') {
+  const out = [];
+  for (const name of fs.readdirSync(dir)) {
+    if (['.git', 'node_modules', '.terraform'].includes(name)) continue;
+    const full = path.join(dir, name);
+    const rel = prefix ? prefix + '/' + name : name;
+    if (fs.statSync(full).isDirectory()) out.push(...readTree(full, rel));
+    else {
+      const ext = name.split('.').pop().toLowerCase();
+      if (!TEXT_EXT.has(ext)) continue;
+      const text = fs.readFileSync(full, 'utf8');
+      const f = { path: rel, name, ext, text };
+      if (ext === 'json') { try { f.json = JSON.parse(text); } catch (e) { f.parseError = e.message; } }
+      out.push(f);
+    }
+  }
+  return out;
+}
+
+global.window = {};
+require(adapterPath);
+const adapter = global.window.InfraLensAdapter;
+if (!adapter) { console.error('Adapter did not set window.InfraLensAdapter'); process.exit(1); }
+
+const files = readTree(folder);
+const model = adapter.extract(files);
+
+console.log(`adapter: ${adapter.name}`);
+console.log(`files read: ${files.length}  (json parse errors: ${files.filter(f => f.parseError).length})`);
+const used = new Set();
+for (const [k, v] of Object.entries(model)) {
+  if (!Array.isArray(v)) continue;
+  v.forEach(e => e.source && used.add(e.source.file));
+  console.log(`  ${k.padEnd(20)} ${v.length}`);
+}
+const unused = files.filter(f => !used.has(f.path));
+if (unused.length) { console.log('\nfiles not used by adapter:'); unused.forEach(f => console.log('  ' + f.path)); }
+if (model.errors && model.errors.length) { console.log('\nadapter errors:'); model.errors.forEach(e => console.log(`  ${e.file}: ${e.message}`)); }
+
+// Dangling references = adapter emitted ids that do not resolve.
+const ids = new Set();
+for (const k of ['projects','networks','folders','service_accounts','wif_pools']) (model[k] || []).forEach(e => ids.add(k + '#' + e.id));
+const dangling = [];
+(model.subnets || []).forEach(s => ids.has('networks#' + s.network) || dangling.push(`subnet ${s.id} → network ${s.network}`));
+(model.firewall_rules || []).forEach(r => ids.has('networks#' + r.network) || dangling.push(`firewall ${r.id} → network ${r.network}`));
+(model.projects || []).forEach(p => !p.folder || ids.has('folders#' + p.folder) || dangling.push(`project ${p.id} → folder ${p.folder}`));
+(model.wif_providers || []).forEach(p => ids.has('wif_pools#' + p.pool) || dangling.push(`provider ${p.id} → pool ${p.pool}`));
+if (dangling.length) { console.log('\ndangling references:'); dangling.forEach(d => console.log('  ' + d)); }
+
+if (process.argv.includes('--dump')) fs.writeFileSync('model.json', JSON.stringify(model, null, 2));

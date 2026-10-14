@@ -1,0 +1,63 @@
+{
+  "access_policy": {
+    "name": "accessPolicies/9876543210",
+    "title": "example-bank-policy"
+  },
+  "access_levels": [
+    {
+      "name": "corp_network",
+      "title": "Corporate network",
+      "conditions": [
+        { "ip_subnetworks": ["203.0.113.0/24", "198.51.100.0/24"] }
+      ]
+    },
+    {
+      "name": "privileged_users",
+      "title": "Privileged platform users",
+      "conditions": [
+        { "members": ["group:gcp-platform-admins@example-bank.se"], "require_screen_lock": true }
+      ]
+    }
+  ],
+  "perimeters": [
+    {
+      "name": "perimeter_prod",
+      "title": "Production perimeter",
+      "perimeter_type": "regular",
+      "resources": [
+        "projects/prj-shared-net-prod",
+        "projects/prj-payments-prod",
+        "projects/prj-data-platform-prod"
+      ],
+      "restricted_services": [
+        "storage.googleapis.com",
+        "bigquery.googleapis.com",
+        "secretmanager.googleapis.com",
+        "pubsub.googleapis.com"
+      ],
+      "access_levels": ["corp_network"],
+      "ingress_policies": [
+        {
+          "from": { "identities": ["serviceAccount:sa-ci-deployer@prj-security-tooling.iam.gserviceaccount.com"], "sources": [{ "access_level": "corp_network" }] },
+          "to": { "resources": ["*"], "operations": [{ "service": "storage.googleapis.com", "methods": ["google.storage.objects.create"] }] }
+        }
+      ],
+      "egress_policies": [
+        {
+          "from": { "identities": ["serviceAccount:sa-data-export@prj-data-platform-prod.iam.gserviceaccount.com"] },
+          "to": { "resources": ["projects/prj-analytics-partner-ext"], "operations": [{ "service": "bigquery.googleapis.com", "methods": ["*"] }] }
+        }
+      ]
+    },
+    {
+      "name": "perimeter_security",
+      "title": "Security tooling perimeter",
+      "perimeter_type": "regular",
+      "resources": ["projects/prj-security-tooling"],
+      "restricted_services": ["storage.googleapis.com", "logging.googleapis.com", "secretmanager.googleapis.com"],
+      "access_levels": ["corp_network", "privileged_users"],
+      "ingress_policies": [],
+      "egress_policies": []
+    }
+  ]
+}

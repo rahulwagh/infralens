@@ -1,0 +1,65 @@
+{
+  "project": {
+    "id": "prj-security-tooling",
+    "name": "Security Tooling",
+    "folder": "fld-security",
+    "billing_account": "01ABCD-EFGH23-456789",
+    "labels": { "env": "prod", "owner": "cloud-platform", "cost-center": "cc-1001" },
+    "apis": ["cloudbuild.googleapis.com", "artifactregistry.googleapis.com", "iam.googleapis.com", "sts.googleapis.com", "logging.googleapis.com"]
+  },
+  "networks": [
+    {
+      "name": "vpc-sec-tooling",
+      "routing_mode": "REGIONAL",
+      "shared_vpc_host": false,
+      "subnets": [
+        { "name": "sn-sec-eu-north1-build", "region": "europe-north1", "cidr": "10.50.0.0/24", "private_google_access": true, "flow_logs": true }
+      ],
+      "peerings": []
+    }
+  ],
+  "firewall_rules": [
+    { "name": "fw-sec-allow-iap", "network": "vpc-sec-tooling", "direction": "INGRESS", "action": "allow", "priority": 1000,
+      "source_ranges": ["35.235.240.0/20"], "rules": [{ "protocol": "tcp", "ports": ["22", "3389"] }], "logging": true },
+    { "name": "fw-sec-deny-all", "network": "vpc-sec-tooling", "direction": "INGRESS", "action": "deny", "priority": 65000,
+      "source_ranges": ["0.0.0.0/0"], "rules": [{ "protocol": "all" }], "logging": true }
+  ],
+  "iam": {
+    "bindings": [
+      { "role": "roles/owner", "members": ["group:gcp-platform-admins@example-bank.se"] },
+      { "role": "roles/cloudbuild.builds.editor", "members": ["group:gcp-platform-admins@example-bank.se", "serviceAccount:sa-ci-deployer@prj-security-tooling.iam.gserviceaccount.com"] },
+      { "role": "roles/iam.securityReviewer", "members": ["group:gcp-security@example-bank.se"] },
+      { "role": "roles/logging.viewer", "members": ["group:gcp-security@example-bank.se", "group:gcp-readonly@example-bank.se"] }
+    ]
+  },
+  "service_accounts": [
+    { "account_id": "sa-ci-deployer", "display_name": "CI/CD deployer (Terraform)", "description": "Impersonated by pipelines to apply Terraform across the org",
+      "project_roles": ["roles/artifactregistry.writer", "roles/storage.objectAdmin"],
+      "org_roles": ["roles/resourcemanager.projectCreator", "roles/compute.xpnAdmin"],
+      "iam": { "bindings": [
+        { "role": "roles/iam.serviceAccountTokenCreator", "members": ["group:gcp-platform-admins@example-bank.se"] },
+        { "role": "roles/iam.workloadIdentityUser", "members": ["principalSet://iam.googleapis.com/projects/000000000001/locations/global/workloadIdentityPools/bitbucket-pool/attribute.workspace/example-bank"] }
+      ] } },
+    { "account_id": "sa-scanner", "display_name": "Config scanner", "org_roles": ["roles/viewer", "roles/iam.securityReviewer"] }
+  ],
+  "workload_identity": {
+    "pools": [
+      {
+        "name": "bitbucket-pool",
+        "display_name": "Bitbucket Pipelines",
+        "providers": [
+          {
+            "name": "bitbucket-provider",
+            "type": "oidc",
+            "issuer_uri": "https://api.bitbucket.org/2.0/workspaces/example-bank/pipelines-config/identity/oidc",
+            "attribute_mapping": { "google.subject": "assertion.sub", "attribute.workspace": "assertion.workspaceUuid", "attribute.repository": "assertion.repositoryUuid" },
+            "attribute_condition": ""
+          }
+        ],
+        "service_account_bindings": [
+          { "service_account": "sa-ci-deployer@prj-security-tooling.iam.gserviceaccount.com", "principal_set": "attribute.workspace/example-bank" }
+        ]
+      }
+    ]
+  }
+}

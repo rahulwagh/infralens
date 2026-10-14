@@ -1,0 +1,53 @@
+{
+  "org_policies": [
+    {
+      "constraint": "compute.vmExternalIpAccess",
+      "scope": "organizations/123456789012",
+      "policy_type": "list",
+      "deny_all": true
+    },
+    {
+      "constraint": "iam.allowedPolicyMemberDomains",
+      "scope": "organizations/123456789012",
+      "policy_type": "list",
+      "allow": ["C01abc2de"]
+    },
+    {
+      "constraint": "compute.restrictVpcPeering",
+      "scope": "organizations/123456789012",
+      "policy_type": "list",
+      "allow": ["under:organizations/123456789012"]
+    },
+    {
+      "constraint": "iam.disableServiceAccountKeyCreation",
+      "scope": "organizations/123456789012",
+      "policy_type": "boolean",
+      "enforce": true
+    },
+    {
+      "constraint": "iam.disableServiceAccountKeyCreation",
+      "scope": "projects/prj-legacy-batch-nonprod",
+      "policy_type": "boolean",
+      "enforce": false,
+      "reason": "Legacy vendor integration requires SA keys until Q2 migration"
+    },
+    {
+      "constraint": "storage.uniformBucketLevelAccess",
+      "scope": "organizations/123456789012",
+      "policy_type": "boolean",
+      "enforce": true
+    },
+    {
+      "constraint": "gcp.resourceLocations",
+      "scope": "organizations/123456789012",
+      "policy_type": "list",
+      "allow": ["in:eu-locations"]
+    },
+    {
+      "constraint": "compute.requireShieldedVm",
+      "scope": "folders/fld-workloads-prod",
+      "policy_type": "boolean",
+      "enforce": true
+    }
+  ]
+}

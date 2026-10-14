@@ -1,0 +1,63 @@
+{
+  "project": {
+    "id": "prj-shared-net-prod",
+    "name": "Shared Network Prod",
+    "folder": "fld-shared",
+    "billing_account": "01ABCD-EFGH23-456789",
+    "labels": { "env": "prod", "owner": "cloud-platform", "cost-center": "cc-1001" },
+    "apis": ["compute.googleapis.com", "dns.googleapis.com", "servicenetworking.googleapis.com"]
+  },
+  "networks": [
+    {
+      "name": "vpc-shared-prod",
+      "routing_mode": "GLOBAL",
+      "shared_vpc_host": true,
+      "service_projects": ["prj-payments-prod", "prj-data-platform-prod"],
+      "subnets": [
+        { "name": "sn-prod-eu-north1-app", "region": "europe-north1", "cidr": "10.10.0.0/22", "private_google_access": true, "flow_logs": true,
+          "secondary_ranges": [{ "name": "pods", "cidr": "10.100.0.0/16" }, { "name": "services", "cidr": "10.101.0.0/20" }] },
+        { "name": "sn-prod-eu-north1-data", "region": "europe-north1", "cidr": "10.10.4.0/22", "private_google_access": true, "flow_logs": true },
+        { "name": "sn-prod-eu-west1-dr", "region": "europe-west1", "cidr": "10.11.0.0/22", "private_google_access": true, "flow_logs": false }
+      ],
+      "peerings": [
+        { "name": "peer-to-hub", "peer_network": "projects/prj-hub-transit/global/networks/vpc-hub", "export_custom_routes": true, "import_custom_routes": true }
+      ]
+    }
+  ],
+  "firewall_rules": [
+    { "name": "fw-prod-allow-iap-ssh", "network": "vpc-shared-prod", "direction": "INGRESS", "action": "allow", "priority": 1000,
+      "source_ranges": ["35.235.240.0/20"], "target_tags": ["iap-ssh"], "rules": [{ "protocol": "tcp", "ports": ["22"] }], "logging": true },
+    { "name": "fw-prod-allow-internal", "network": "vpc-shared-prod", "direction": "INGRESS", "action": "allow", "priority": 1000,
+      "source_ranges": ["10.10.0.0/16"], "rules": [{ "protocol": "tcp", "ports": ["0-65535"] }, { "protocol": "udp", "ports": ["0-65535"] }, { "protocol": "icmp" }], "logging": false },
+    { "name": "fw-prod-allow-hc", "network": "vpc-shared-prod", "direction": "INGRESS", "action": "allow", "priority": 900,
+      "source_ranges": ["130.211.0.0/22", "35.191.0.0/16"], "target_tags": ["lb-backend"], "rules": [{ "protocol": "tcp", "ports": ["8080", "443"] }], "logging": true },
+    { "name": "fw-prod-allow-vendor-rdp", "network": "vpc-shared-prod", "direction": "INGRESS", "action": "allow", "priority": 800,
+      "source_ranges": ["0.0.0.0/0"], "target_tags": ["vendor-jump"], "rules": [{ "protocol": "tcp", "ports": ["3389"] }], "logging": false,
+      "description": "TEMP: vendor remote access, ticket CHG-4471" },
+    { "name": "fw-prod-deny-all-ingress", "network": "vpc-shared-prod", "direction": "INGRESS", "action": "deny", "priority": 65000,
+      "source_ranges": ["0.0.0.0/0"], "rules": [{ "protocol": "all" }], "logging": true },
+    { "name": "fw-prod-allow-egress-google-apis", "network": "vpc-shared-prod", "direction": "EGRESS", "action": "allow", "priority": 1000,
+      "destination_ranges": ["199.36.153.8/30"], "rules": [{ "protocol": "tcp", "ports": ["443"] }], "logging": false },
+    { "name": "fw-prod-deny-all-egress", "network": "vpc-shared-prod", "direction": "EGRESS", "action": "deny", "priority": 65000,
+      "destination_ranges": ["0.0.0.0/0"], "rules": [{ "protocol": "all" }], "logging": true },
+    { "name": "fw-prod-old-allow-db", "network": "vpc-shared-prod", "direction": "INGRESS", "action": "allow", "priority": 1000,
+      "source_ranges": ["10.10.0.0/22"], "target_service_accounts": ["sa-db-proxy@prj-shared-net-prod.iam.gserviceaccount.com"], "rules": [{ "protocol": "tcp", "ports": ["5432"] }], "disabled": true, "logging": false }
+  ],
+  "iam": {
+    "bindings": [
+      { "role": "roles/compute.networkAdmin", "members": ["group:gcp-platform-admins@example-bank.se"] },
+      { "role": "roles/compute.networkUser", "members": ["group:gcp-payments-devs@example-bank.se", "group:gcp-data-devs@example-bank.se", "serviceAccount:sa-gke-nodes@prj-payments-prod.iam.gserviceaccount.com"] },
+      { "role": "roles/viewer", "members": ["group:gcp-readonly@example-bank.se", "user:external.auditor@auditfirm.com"] },
+      { "role": "roles/compute.securityAdmin", "members": ["group:gcp-security@example-bank.se"],
+        "condition": { "title": "business_hours", "expression": "request.time.getHours('Europe/Stockholm') >= 7 && request.time.getHours('Europe/Stockholm') <= 19" } }
+    ]
+  },
+  "service_accounts": [
+    { "account_id": "sa-db-proxy", "display_name": "Cloud SQL Auth Proxy", "description": "Used by app tier to reach Cloud SQL",
+      "project_roles": ["roles/cloudsql.client"],
+      "iam": { "bindings": [{ "role": "roles/iam.serviceAccountUser", "members": ["group:gcp-payments-devs@example-bank.se"] }] } },
+    { "account_id": "sa-dns-updater", "display_name": "DNS record updater", "project_roles": ["roles/dns.admin"],
+      "iam": { "bindings": [{ "role": "roles/iam.serviceAccountTokenCreator", "members": ["serviceAccount:sa-ci-deployer@prj-security-tooling.iam.gserviceaccount.com"] }] } }
+  ],
+  "workload_identity": { "pools": [] }
+}

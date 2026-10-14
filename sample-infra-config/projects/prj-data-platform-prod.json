@@ -1,0 +1,29 @@
+{
+  "project": {
+    "id": "prj-data-platform-prod",
+    "name": "Data Platform Prod",
+    "folder": "fld-workloads-prod",
+    "billing_account": "01ABCD-EFGH23-456789",
+    "labels": { "env": "prod", "owner": "data-team", "cost-center": "cc-3010", "data-classification": "confidential" },
+    "apis": ["bigquery.googleapis.com", "dataflow.googleapis.com", "storage.googleapis.com", "composer.googleapis.com"],
+    "shared_vpc_host_project": "prj-shared-net-prod"
+  },
+  "networks": [],
+  "firewall_rules": [],
+  "iam": {
+    "bindings": [
+      { "role": "roles/editor", "members": ["group:gcp-data-devs@example-bank.se"] },
+      { "role": "roles/bigquery.admin", "members": ["group:gcp-data-devs@example-bank.se", "user:contractor.jsmith@consultco.com"] },
+      { "role": "roles/bigquery.dataViewer", "members": ["group:gcp-analysts@example-bank.se"] },
+      { "role": "roles/storage.objectViewer", "members": ["allUsers"] },
+      { "role": "roles/viewer", "members": ["group:gcp-readonly@example-bank.se"] }
+    ]
+  },
+  "service_accounts": [
+    { "account_id": "sa-dataflow", "display_name": "Dataflow workers", "project_roles": ["roles/dataflow.worker", "roles/bigquery.dataEditor", "roles/storage.objectAdmin"] },
+    { "account_id": "sa-data-export", "display_name": "Partner export", "description": "Exports aggregated tables to partner project (VPC-SC egress)", "project_roles": ["roles/bigquery.dataViewer", "roles/bigquery.jobUser"] },
+    { "account_id": "sa-composer", "display_name": "Cloud Composer environment", "project_roles": ["roles/composer.worker", "roles/bigquery.admin"],
+      "iam": { "bindings": [{ "role": "roles/iam.serviceAccountUser", "members": ["group:gcp-data-devs@example-bank.se"] }] } }
+  ],
+  "workload_identity": { "pools": [] }
+}

@@ -1,0 +1,50 @@
+{
+  "project": {
+    "id": "prj-payments-prod",
+    "name": "Payments Prod",
+    "folder": "fld-workloads-prod",
+    "billing_account": "01ABCD-EFGH23-456789",
+    "labels": { "env": "prod", "owner": "payments-team", "cost-center": "cc-2040", "data-classification": "confidential" },
+    "apis": ["container.googleapis.com", "sqladmin.googleapis.com", "secretmanager.googleapis.com", "pubsub.googleapis.com"],
+    "shared_vpc_host_project": "prj-shared-net-prod"
+  },
+  "networks": [],
+  "firewall_rules": [],
+  "iam": {
+    "bindings": [
+      { "role": "roles/owner", "members": ["user:lead.payments@example-bank.se"] },
+      { "role": "roles/editor", "members": ["group:gcp-payments-devs@example-bank.se"] },
+      { "role": "roles/container.admin", "members": ["group:gcp-payments-devs@example-bank.se", "serviceAccount:sa-ci-deployer@prj-security-tooling.iam.gserviceaccount.com"] },
+      { "role": "roles/secretmanager.secretAccessor", "members": ["serviceAccount:sa-payments-api@prj-payments-prod.iam.gserviceaccount.com"] },
+      { "role": "roles/viewer", "members": ["group:gcp-readonly@example-bank.se"] },
+      { "role": "roles/pubsub.publisher", "members": ["allAuthenticatedUsers"] }
+    ]
+  },
+  "service_accounts": [
+    { "account_id": "sa-gke-nodes", "display_name": "GKE node service account", "project_roles": ["roles/logging.logWriter", "roles/monitoring.metricWriter", "roles/artifactregistry.reader"] },
+    { "account_id": "sa-payments-api", "display_name": "Payments API workload identity", "project_roles": ["roles/cloudsql.client", "roles/pubsub.publisher"],
+      "iam": { "bindings": [{ "role": "roles/iam.workloadIdentityUser", "members": ["serviceAccount:prj-payments-prod.svc.id.goog[payments/payments-api]"] }] } },
+    { "account_id": "sa-payments-batch", "display_name": "Nightly settlement batch", "project_roles": ["roles/bigquery.dataEditor", "roles/storage.objectAdmin"],
+      "iam": { "bindings": [{ "role": "roles/iam.serviceAccountTokenCreator", "members": ["group:gcp-payments-devs@example-bank.se"] }] } }
+  ],
+  "workload_identity": {
+    "pools": [
+      {
+        "name": "github-pool",
+        "display_name": "GitHub Actions",
+        "providers": [
+          {
+            "name": "github-provider",
+            "type": "oidc",
+            "issuer_uri": "https://token.actions.githubusercontent.com",
+            "attribute_mapping": { "google.subject": "assertion.sub", "attribute.repository": "assertion.repository", "attribute.actor": "assertion.actor" },
+            "attribute_condition": "assertion.repository_owner == 'example-bank'"
+          }
+        ],
+        "service_account_bindings": [
+          { "service_account": "sa-ci-deployer@prj-security-tooling.iam.gserviceaccount.com", "principal_set": "attribute.repository/example-bank/payments-infra" }
+        ]
+      }
+    ]
+  }
+}

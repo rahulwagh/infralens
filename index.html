@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InfraLens</title>
+<meta name="description" content="Offline, read-only bird's-eye view of a Terraform/GCP infra-config repository.">
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --ink: #1b2430; --ink-2: #536070; --ink-3: #8a94a3;
+    --line: #dde2e9; --line-2: #eef1f5; --accent: #1f5fbf; --accent-bg: #e8f0fc;
+    --high: #b3261e; --high-bg: #fbe9e7; --med: #9a5b00; --med-bg: #fff3dc; --low: #2e6b3f; --low-bg: #e6f3ea;
+    --code: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --radius: 4px;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #15191f; --panel: #1d2229; --ink: #e6eaf0; --ink-2: #aab4c2; --ink-3: #6f7a89;
+    --line: #2d343e; --line-2: #252b34; --accent: #7aa7f0; --accent-bg: #1e2b44;
+    --high: #ff8a80; --high-bg: #3a1f1d; --med: #ffc46b; --med-bg: #3a2c12; --low: #8fd3a3; --low-bg: #1d3324;
+  } }
+  :root[data-theme="dark"] {
+    --bg: #15191f; --panel: #1d2229; --ink: #e6eaf0; --ink-2: #aab4c2; --ink-3: #6f7a89;
+    --line: #2d343e; --line-2: #252b34; --accent: #7aa7f0; --accent-bg: #1e2b44;
+    --high: #ff8a80; --high-bg: #3a1f1d; --med: #ffc46b; --med-bg: #3a2c12; --low: #8fd3a3; --low-bg: #1d3324;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
+  code, .mono { font-family: var(--code); font-size: 12.5px; }
+  a { color: var(--accent); }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ---- shell ---- */
+  #app { display: grid; grid-template-columns: 232px 1fr; grid-template-rows: 48px 1fr; height: 100vh; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .01em; }
+  header h1 span { color: var(--ink-3); font-weight: 400; margin-left: 8px; }
+  #search { flex: 1; max-width: 520px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--ink); font: inherit; }
+  #search::placeholder { color: var(--ink-3); }
+  .hbtn { padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); cursor: pointer; }
+  .hbtn:hover { border-color: var(--accent); }
+  #repoName { color: var(--ink-2); font-size: 13px; }
+  nav { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 10px 0; }
+  nav .grp { padding: 10px 16px 4px; font-size: 11.5px; color: var(--ink-3); }
+  nav button { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 16px; border: 0; background: transparent; text-align: left; cursor: pointer; border-left: 3px solid transparent; }
+  nav button:hover { background: var(--line-2); }
+  nav button.active { background: var(--accent-bg); border-left-color: var(--accent); color: var(--accent); font-weight: 600; }
+  nav .n { font-family: var(--code); font-size: 12px; color: var(--ink-3); }
+  nav button.active .n { color: var(--accent); }
+  main { position: relative; overflow: hidden; display: grid; grid-template-columns: 1fr; }
+  main.with-drawer { grid-template-columns: 1fr 420px; }
+  #view { overflow: auto; padding: 18px 22px 40px; }
+  #drawer { display: none; border-left: 1px solid var(--line); background: var(--panel); overflow: auto; }
+  main.with-drawer #drawer { display: block; }
+
+  /* ---- content ---- */
+  h2 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--ink-2); margin: 0 0 16px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; }
+  .toolbar input, .toolbar select { padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); font: inherit; }
+  .toolbar .count { color: var(--ink-3); margin-left: auto; font-size: 13px; }
+  .chip { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 12px; background: var(--line-2); color: var(--ink-2); margin: 1px 2px 1px 0; white-space: nowrap; }
+  .chip.high { background: var(--high-bg); color: var(--high); } .chip.med { background: var(--med-bg); color: var(--med); } .chip.low { background: var(--low-bg); color: var(--low); }
+  .chip.accent { background: var(--accent-bg); color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  th { position: sticky; top: 0; background: var(--panel); font-weight: 600; font-size: 12.5px; color: var(--ink-2); border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; white-space: nowrap; }
+  th.sorted::after { content: " ↕"; color: var(--ink-3); } th.asc::after { content: " ↑"; } th.desc::after { content: " ↓"; }
+  tbody tr { cursor: pointer; } tbody tr:hover { background: var(--line-2); } tbody tr.sel { background: var(--accent-bg); }
+  .tbl { overflow: auto; max-height: calc(100vh - 170px); border: 1px solid var(--line); background: var(--panel); }
+  .tbl table { border: 0; width: max-content; min-width: 100%; }
+  td .mono { white-space: nowrap; }
+  td .chip.mono { white-space: nowrap; }
+  .muted { color: var(--ink-3); }
+  .empty { padding: 36px 20px; text-align: center; color: var(--ink-2); background: var(--panel); border: 1px dashed var(--line); border-radius: var(--radius); }
+
+  /* overview */
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; cursor: pointer; }
+  .stat:hover { border-color: var(--accent); }
+  .stat b { display: block; font-size: 22px; font-weight: 600; line-height: 1.1; }
+  .stat small { color: var(--ink-2); }
+  .cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; }
+  @media (max-width: 1100px) { .cols { grid-template-columns: 1fr; } }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .box h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+  .tree ul { list-style: none; margin: 0; padding-left: 18px; border-left: 1px solid var(--line); }
+  .tree > ul { padding-left: 0; border: 0; }
+  .tree li { margin: 4px 0; }
+  .tree .fld { color: var(--ink-2); font-weight: 600; }
+  .tree .prj { display: inline-flex; gap: 8px; align-items: center; padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; background: var(--bg); margin: 2px 0; }
+  .tree .prj:hover { border-color: var(--accent); }
+  .tree .prj .mono { font-size: 12px; }
+  .finding-row { display: grid; grid-template-columns: 54px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line-2); cursor: pointer; }
+  .finding-row:last-child { border-bottom: 0; }
+  .finding-row:hover .t { color: var(--accent); }
+  .sev { font-size: 11.5px; font-weight: 600; padding: 2px 0; text-align: center; border-radius: 3px; height: fit-content; }
+  .sev.high { background: var(--high-bg); color: var(--high); } .sev.med { background: var(--med-bg); color: var(--med); } .sev.low { background: var(--low-bg); color: var(--low); }
+  .finding-row .d { color: var(--ink-2); font-size: 13px; }
+
+  /* matrix */
+  .matrix { overflow: auto; }
+  .matrix table { width: auto; }
+  .matrix th.rot { height: 150px; white-space: nowrap; vertical-align: bottom; padding: 0 4px; }
+  .matrix th.rot > div { transform: rotate(-60deg); transform-origin: left bottom; width: 20px; }
+  .matrix td.c { text-align: center; font-family: var(--code); font-size: 11px; padding: 3px 6px; }
+  .matrix td.c.has { background: var(--accent-bg); color: var(--accent); }
+  .matrix td.c.risky { background: var(--high-bg); color: var(--high); font-weight: 600; }
+
+  /* drawer */
+  #drawer .hd { position: sticky; top: 0; background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 16px; display: flex; gap: 10px; align-items: flex-start; }
+  #drawer .hd h3 { margin: 0; font-size: 15px; font-weight: 600; word-break: break-all; }
+  #drawer .hd .k { color: var(--ink-3); font-size: 12px; }
+  #drawer .close { margin-left: auto; border: 0; background: transparent; cursor: pointer; font-size: 18px; line-height: 1; color: var(--ink-2); }
+  #drawer section { padding: 12px 16px; border-bottom: 1px solid var(--line-2); }
+  #drawer h4 { margin: 0 0 8px; font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+  dl { display: grid; grid-template-columns: 130px 1fr; gap: 4px 10px; margin: 0; }
+  dt { color: var(--ink-3); font-size: 12.5px; } dd { margin: 0; word-break: break-word; }
+  .rel { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px dotted var(--line-2); cursor: pointer; }
+  .rel:hover { color: var(--accent); } .rel .k { color: var(--ink-3); font-size: 12px; white-space: nowrap; }
+  pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; font-family: var(--code); font-size: 12px; overflow: auto; max-height: 420px; white-space: pre-wrap; word-break: break-all; }
+  .src { font-family: var(--code); font-size: 12px; color: var(--ink-2); }
+
+  /* landing */
+  #landing { max-width: 640px; margin: 60px auto; }
+  #landing h2 { font-size: 26px; }
+  #landing p { color: var(--ink-2); max-width: 60ch; }
+  .big { display: inline-block; padding: 10px 16px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent); color: #fff; cursor: pointer; margin: 6px 8px 6px 0; }
+  .big.alt { background: transparent; color: var(--accent); }
+  #landing ol { color: var(--ink-2); padding-left: 20px; }
+  .err { color: var(--high); }
+  @media (prefers-reduced-motion: no-preference) { tbody tr, .stat, .prj { transition: background .12s, border-color .12s; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>InfraLens <span id="repoName"></span></h1>
+    <input id="search" type="search" placeholder="Search everything — project id, CIDR, SA email, role, group, constraint…" autocomplete="off" disabled>
+    <button class="hbtn" id="btnOpen" title="Open a different infra-config folder">Open folder</button>
+    <button class="hbtn" id="btnExport" title="Download the normalized model as JSON" disabled>Export model</button>
+    <button class="hbtn" id="btnTheme" title="Toggle light/dark">Theme</button>
+  </header>
+  <nav id="nav"></nav>
+  <main id="main">
+    <div id="view"></div>
+    <aside id="drawer"></aside>
+  </main>
+</div>
+<input type="file" id="dirInput" webkitdirectory directory multiple hidden>
+
+<script src="adapters/default.js"></script>
+<script>
+(function () {
+'use strict';
+
+/* =========================================================================
+   1. SECTIONS — what the left rail shows and how each entity type renders
+   ========================================================================= */
+const SECTIONS = [
+  { id: 'overview', label: 'Overview', group: 'Estate' },
+  { id: 'findings', label: 'Findings', group: 'Estate', countOf: 'findings' },
+  { id: 'projects', label: 'Projects', group: 'Estate', kind: 'projects',
+    cols: [['id','Project', 'mono'], ['name','Name'], ['folder','Folder','mono'], ['labels.env','Env'], ['labels.owner','Owner'], ['shared_vpc_host','Shared VPC host','mono']] },
+  { id: 'folders', label: 'Folders', group: 'Estate', kind: 'folders',
+    cols: [['id','Folder','mono'], ['name','Name'], ['parent','Parent','mono']] },
+  { id: 'networks', label: 'Networks', group: 'Network', kind: 'networks',
+    cols: [['name','VPC','mono'], ['project','Project','mono'], ['routing_mode','Routing'], ['shared_vpc_host','Host', 'bool'], ['service_projects','Service projects','list']] },
+  { id: 'subnets', label: 'Subnets', group: 'Network', kind: 'subnets',
+    cols: [['name','Subnet','mono'], ['cidr','CIDR','mono'], ['region','Region'], ['network','Network','mono'], ['private_google_access','PGA','bool'], ['flow_logs','Flow logs','bool'], ['secondary_ranges','Secondary','ranges']] },
+  { id: 'peerings', label: 'Peerings', group: 'Network', kind: 'peerings',
+    cols: [['name','Peering','mono'], ['network','Network','mono'], ['peer_network','Peer','mono'], ['export_custom_routes','Export routes','bool'], ['import_custom_routes','Import routes','bool']] },
+  { id: 'firewall_rules', label: 'Firewall rules', group: 'Network', kind: 'firewall_rules',
+    cols: [['name','Rule','mono'], ['project','Project','mono'], ['direction','Dir'], ['action','Action'], ['priority','Prio'], ['source_ranges','Sources','list'], ['destination_ranges','Destinations','list'], ['target_tags','Target tags','list'], ['target_service_accounts','Target SAs','list'], ['rules','Protocols/ports','ports'], ['logging','Log','bool'], ['disabled','Off','bool']] },
+  { id: 'iam_bindings', label: 'IAM bindings', group: 'Identity', kind: 'iam_bindings',
+    cols: [['principal','Principal','mono'], ['principal_type','Type'], ['role','Role','mono'], ['resource_type','On'], ['resource','Resource','mono'], ['condition.title','Condition']] },
+  { id: 'iam_matrix', label: 'Access matrix', group: 'Identity' },
+  { id: 'service_accounts', label: 'Service accounts', group: 'Identity', kind: 'service_accounts',
+    cols: [['email','Email','mono'], ['project','Project','mono'], ['display_name','Name'], ['description','Description']] },
+  { id: 'wif', label: 'Workload identity', group: 'Identity' },
+  { id: 'vpc_sc', label: 'VPC Service Controls', group: 'Policy' },
+  { id: 'org_policies', label: 'Org policies', group: 'Policy', kind: 'org_policies',
+    cols: [['constraint','Constraint','mono'], ['scope_type','Scope'], ['scope','On','mono'], ['policy_type','Type'], ['enforce','Enforce','bool'], ['allow','Allow','list'], ['deny','Deny','list'], ['deny_all','Deny all','bool'], ['reason','Reason']] },
+  { id: 'files', label: 'Source files', group: 'Repository' },
+];
+
+/* =========================================================================
+   2. FINDINGS — rules run on the canonical model. Add your own here.
+   Each rule: { id, severity: high|med|low, title, test(model) -> array of {entity_kind, entity_id, detail} }
+   ========================================================================= */
+const PRIMITIVE_ROLES = new Set(['roles/owner', 'roles/editor']);
+const IMPERSONATION_ROLES = new Set(['roles/iam.serviceAccountTokenCreator', 'roles/iam.serviceAccountUser', 'roles/iam.serviceAccountKeyAdmin', 'roles/iam.workloadIdentityUser']);
+const isPublicRange = (r) => r === '0.0.0.0/0' || r === '::/0';
+const isWide = (p) => !p || p === '0-65535' || p === '1-65535';
+const FINDINGS = [
+  { id: 'fw-public-ingress', severity: 'high', title: 'Firewall allows ingress from the internet',
+    test: (m) => m.firewall_rules.filter(r => !r.disabled && r.direction === 'INGRESS' && r.action === 'allow' && (r.source_ranges || []).some(isPublicRange))
+      .map(r => ({ entity_kind: 'firewall_rules', entity_id: r.id, detail: `${r.name}: ${r.rules.map(x => x.protocol + (x.ports ? ':' + x.ports.join(',') : '')).join(' ')} ${r.target_tags ? 'to tags ' + r.target_tags.join(',') : r.target_service_accounts ? 'to SAs' : 'to ALL instances'}` })) },
+  { id: 'fw-wide-ports', severity: 'med', title: 'Firewall rule allows all ports / all protocols',
+    test: (m) => m.firewall_rules.filter(r => !r.disabled && r.action === 'allow' && r.rules.some(x => x.protocol === 'all' || ((x.protocol === 'tcp' || x.protocol === 'udp') && (x.ports || []).some(isWide))))
+      .map(r => ({ entity_kind: 'firewall_rules', entity_id: r.id, detail: `${r.name} (${r.direction}, prio ${r.priority}) from ${(r.source_ranges || r.destination_ranges || ['-']).join(', ')}` })) },
+  { id: 'fw-no-logging', severity: 'low', title: 'Allow rule without firewall logging',
+    test: (m) => m.firewall_rules.filter(r => !r.disabled && r.action === 'allow' && !r.logging).map(r => ({ entity_kind: 'firewall_rules', entity_id: r.id, detail: r.name })) },
+  { id: 'fw-disabled', severity: 'low', title: 'Disabled firewall rule still in config',
+    test: (m) => m.firewall_rules.filter(r => r.disabled).map(r => ({ entity_kind: 'firewall_rules', entity_id: r.id, detail: `${r.name} — remove if no longer needed` })) },
+  { id: 'iam-public', severity: 'high', title: 'IAM binding to allUsers / allAuthenticatedUsers',
+    test: (m) => m.iam_bindings.filter(b => b.principal_type === 'allUsers' || b.principal_type === 'allAuthenticatedUsers').map(b => ({ entity_kind: 'iam_bindings', entity_id: b.id, detail: `${b.principal} has ${b.role} on ${b.resource}` })) },
+  { id: 'iam-primitive', severity: 'high', title: 'Primitive role (owner/editor) granted',
+    test: (m) => m.iam_bindings.filter(b => PRIMITIVE_ROLES.has(b.role)).map(b => ({ entity_kind: 'iam_bindings', entity_id: b.id, detail: `${b.principal} is ${b.role} on ${b.resource}` })) },
+  { id: 'iam-user-direct', severity: 'med', title: 'Role granted to an individual user (not a group)',
+    test: (m) => m.iam_bindings.filter(b => b.principal_type === 'user').map(b => ({ entity_kind: 'iam_bindings', entity_id: b.id, detail: `${b.principal}: ${b.role} on ${b.resource}` })) },
+  { id: 'iam-external-domain', severity: 'high', title: 'Principal outside the organisation domain',
+    test: (m) => { const d = m.meta && m.meta.org_domain; if (!d) return [];
+      return m.iam_bindings.filter(b => (b.principal_type === 'user' || b.principal_type === 'group') && !b.principal.endsWith('@' + d))
+        .map(b => ({ entity_kind: 'iam_bindings', entity_id: b.id, detail: `${b.principal}: ${b.role} on ${b.resource}` })); } },
+  { id: 'iam-sa-impersonation', severity: 'med', title: 'Service account can be impersonated / used',
+    test: (m) => m.iam_bindings.filter(b => b.resource_type === 'service_account' && IMPERSONATION_ROLES.has(b.role)).map(b => ({ entity_kind: 'iam_bindings', entity_id: b.id, detail: `${b.principal} → ${b.role} on ${b.resource}` })) },
+  { id: 'iam-sa-key-admin', severity: 'high', title: 'Service account key admin granted',
+    test: (m) => m.iam_bindings.filter(b => b.role === 'roles/iam.serviceAccountKeyAdmin').map(b => ({ entity_kind: 'iam_bindings', entity_id: b.id, detail: `${b.principal} on ${b.resource}` })) },
+  { id: 'iam-org-level-sa', severity: 'med', title: 'Service account holds organisation-level role',
+    test: (m) => m.iam_bindings.filter(b => b.resource_type === 'organization' && b.principal_type === 'serviceAccount').map(b => ({ entity_kind: 'iam_bindings', entity_id: b.id, detail: `${b.principal}: ${b.role}` })) },
+  { id: 'wif-no-condition', severity: 'high', title: 'Workload identity provider without attribute condition',
+    test: (m) => m.wif_providers.filter(p => !p.attribute_condition || !p.attribute_condition.trim()).map(p => ({ entity_kind: 'wif_providers', entity_id: p.id, detail: `${p.id} (${p.issuer_uri || p.type}) — any token from this issuer is accepted` })) },
+  { id: 'wif-broad-binding', severity: 'med', title: 'Workload identity binding at workspace/owner scope',
+    test: (m) => m.wif_bindings.filter(b => /attribute\.(workspace|repository_owner|owner)\//.test(b.principal_set) || /\/\*$/.test(b.principal_set)).map(b => ({ entity_kind: 'wif_bindings', entity_id: b.id, detail: `${b.principal_set} → ${b.service_account}` })) },
+  { id: 'subnet-no-pga', severity: 'low', title: 'Subnet without Private Google Access',
+    test: (m) => m.subnets.filter(s => s.private_google_access === false).map(s => ({ entity_kind: 'subnets', entity_id: s.id, detail: s.id })) },
+  { id: 'subnet-no-flowlogs', severity: 'low', title: 'Subnet without VPC flow logs',
+    test: (m) => m.subnets.filter(s => s.flow_logs === false).map(s => ({ entity_kind: 'subnets', entity_id: s.id, detail: s.id })) },
+  { id: 'vpcsc-outside', severity: 'med', title: 'Production project outside any VPC-SC perimeter',
+    test: (m) => { const inside = new Set(m.vpc_sc_perimeters.flatMap(p => p.projects));
+      return m.projects.filter(p => (p.labels && p.labels.env === 'prod') && !inside.has(p.id)).map(p => ({ entity_kind: 'projects', entity_id: p.id, detail: p.id })); } },
+  { id: 'vpcsc-egress', severity: 'med', title: 'VPC-SC egress policy defined',
+    test: (m) => m.vpc_sc_perimeters.filter(p => (p.egress_policies || []).length).map(p => ({ entity_kind: 'vpc_sc_perimeters', entity_id: p.id, detail: `${p.name}: ${p.egress_policies.length} egress rule(s)` })) },
+  { id: 'orgpol-override', severity: 'med', title: 'Org policy relaxed below organisation level',
+    test: (m) => { const orgLevel = new Map(m.org_policies.filter(p => p.scope_type === 'organization').map(p => [p.constraint, p]));
+      return m.org_policies.filter(p => p.scope_type !== 'organization' && orgLevel.has(p.constraint) && orgLevel.get(p.constraint).enforce === true && p.enforce === false)
+        .map(p => ({ entity_kind: 'org_policies', entity_id: p.id, detail: `${p.constraint} not enforced on ${p.scope}${p.reason ? ' — ' + p.reason : ''}` })); } },
+];
+
+/* =========================================================================
+   3. STATE + LOADING
+   ========================================================================= */
+const S = { files: [], model: null, index: null, findings: [], section: 'overview', selected: null, query: '', sort: {}, filters: {} };
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const get = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
+const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md']);
+
+async function openWithPicker() {
+  if (!window.showDirectoryPicker) { $('#dirInput').click(); return; }
+  let dir;
+  try { dir = await window.showDirectoryPicker({ mode: 'read' }); } catch (e) { return; }
+  const files = [];
+  async function walk(handle, prefix) {
+    for await (const [name, h] of handle.entries()) {
+      if (name === '.git' || name === 'node_modules' || name === '.terraform') continue;
+      const p = prefix ? prefix + '/' + name : name;
+      if (h.kind === 'directory') await walk(h, p);
+      else { const ext = name.split('.').pop().toLowerCase(); if (TEXT_EXT.has(ext)) files.push({ path: p, name, ext, text: await (await h.getFile()).text() }); }
+    }
+  }
+  await walk(dir, '');
+  load(dir.name, files);
+}
+async function openFromInput(ev) {
+  const list = Array.from(ev.target.files || []);
+  if (!list.length) return;
+  const root = (list[0].webkitRelativePath || '').split('/')[0];
+  const files = [];
+  for (const f of list) {
+    const rel = (f.webkitRelativePath || f.name).split('/').slice(1).join('/');
+    if (/(^|\/)(\.git|node_modules|\.terraform)\//.test(rel)) continue;
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (TEXT_EXT.has(ext)) files.push({ path: rel, name: f.name, ext, text: await f.text() });
+  }
+  load(root, files);
+  ev.target.value = '';
+}
+function load(name, files) {
+  for (const f of files) { if (f.ext === 'json') { try { f.json = JSON.parse(f.text); } catch (e) { f.parseError = e.message; } } }
+  S.files = files.sort((a, b) => a.path.localeCompare(b.path));
+  const adapter = window.InfraLensAdapter;
+  if (!adapter) { alert('No adapter loaded. Check adapters/default.js is next to index.html.'); return; }
+  S.model = normalize(adapter.extract(files));
+  S.index = buildIndex(S.model);
+  S.findings = runFindings(S.model);
+  S.selected = null; S.query = '';
+  $('#repoName').textContent = `${name} · ${adapter.name}`;
+  $('#search').disabled = false; $('#search').value = ''; $('#btnExport').disabled = false;
+  go('overview');
+}
+
+// Fill defaults, derive WIF bindings from principalSet IAM bindings, de-dup.
+function normalize(m) {
+  const kinds = ['folders','projects','networks','subnets','peerings','firewall_rules','iam_bindings','service_accounts','wif_pools','wif_providers','wif_bindings','access_levels','vpc_sc_perimeters','org_policies','other','errors'];
+  for (const k of kinds) if (!Array.isArray(m[k])) m[k] = [];
+  m.meta = m.meta || {};
+  const seen = new Set(m.wif_bindings.map(b => b.id));
+  for (const b of m.iam_bindings) {
+    if (b.resource_type === 'service_account' && (b.principal_type === 'principalSet' || b.principal_type === 'principal')) {
+      const mm = b.principal.match(/workloadIdentityPools\/([^/]+)\/(.*)$/);
+      const poolName = mm ? mm[1] : '?';
+      const pool = m.wif_pools.find(p => p.name === poolName);
+      const poolId = pool ? pool.id : poolName; const pset = mm ? mm[2] : b.principal;
+      const dup = m.wif_bindings.some(w => w.pool === poolId && w.service_account === b.resource && w.principal_set === pset);
+      const id = `derived:${b.id}`;
+      if (!dup && !seen.has(id)) { seen.add(id); m.wif_bindings.push({ id, pool: poolId, service_account: b.resource, principal_set: pset, derived_from: b.id, source: b.source }); }
+    }
+  }
+  return m;
+}
+
+/* =========================================================================
+   4. INDEX + RELATIONSHIP GRAPH (generic: derived from id references)
+   ========================================================================= */
+const KIND_LABEL = { folders: 'Folder', projects: 'Project', networks: 'Network', subnets: 'Subnet', peerings: 'Peering', firewall_rules: 'Firewall rule', iam_bindings: 'IAM binding', service_accounts: 'Service account', wif_pools: 'WIF pool', wif_providers: 'WIF provider', wif_bindings: 'WIF binding', access_levels: 'Access level', vpc_sc_perimeters: 'VPC-SC perimeter', org_policies: 'Org policy', other: 'Other' };
+function buildIndex(m) {
+  const byId = new Map(); const edges = new Map(); // id -> [{to, label}]
+  const add = (kind, e) => byId.set(kind + '#' + e.id, { kind, e });
+  for (const k of Object.keys(KIND_LABEL)) for (const e of m[k]) add(k, e);
+  const link = (a, b, label) => { if (!byId.has(a) || !byId.has(b)) return; (edges.get(a) || edges.set(a, []).get(a)).push({ to: b, label }); (edges.get(b) || edges.set(b, []).get(b)).push({ to: a, label }); };
+  const saKey = (email) => 'service_accounts#' + email.replace(/^serviceAccount:/, '');
+  for (const p of m.projects) { if (p.folder) link('projects#' + p.id, 'folders#' + p.folder, 'in folder'); if (p.shared_vpc_host) link('projects#' + p.id, 'projects#' + p.shared_vpc_host, 'shared VPC host'); }
+  for (const f of m.folders) { const par = (f.parent || '').replace('folders/', ''); link('folders#' + f.id, 'folders#' + par, 'parent'); }
+  for (const n of m.networks) { link('networks#' + n.id, 'projects#' + n.project, 'project'); (n.service_projects || []).forEach(sp => link('networks#' + n.id, 'projects#' + sp, 'service project')); }
+  for (const s of m.subnets) link('subnets#' + s.id, 'networks#' + s.network, 'network');
+  for (const p of m.peerings) link('peerings#' + p.id, 'networks#' + p.network, 'network');
+  for (const r of m.firewall_rules) { link('firewall_rules#' + r.id, 'networks#' + r.network, 'network'); link('firewall_rules#' + r.id, 'projects#' + r.project, 'project'); (r.target_service_accounts || []).forEach(sa => link('firewall_rules#' + r.id, saKey(sa), 'targets SA')); }
+  for (const sa of m.service_accounts) link('service_accounts#' + sa.id, 'projects#' + sa.project, 'project');
+  for (const b of m.iam_bindings) {
+    const me = 'iam_bindings#' + b.id;
+    if (b.resource_type === 'project') link(me, 'projects#' + b.resource, 'on project');
+    if (b.resource_type === 'folder') link(me, 'folders#' + b.resource, 'on folder');
+    if (b.resource_type === 'service_account') link(me, saKey(b.resource), 'on SA');
+    if (b.principal_type === 'serviceAccount') link(me, saKey(b.principal), 'granted to SA');
+  }
+  for (const p of m.wif_pools) link('wif_pools#' + p.id, 'projects#' + p.project, 'project');
+  for (const p of m.wif_providers) link('wif_providers#' + p.id, 'wif_pools#' + p.pool, 'pool');
+  for (const b of m.wif_bindings) { link('wif_bindings#' + b.id, 'wif_pools#' + b.pool, 'pool'); link('wif_bindings#' + b.id, saKey(b.service_account), 'acts as SA'); }
+  for (const p of m.vpc_sc_perimeters) { p.projects.forEach(pr => link('vpc_sc_perimeters#' + p.id, 'projects#' + pr, 'contains')); (p.access_levels || []).forEach(al => link('vpc_sc_perimeters#' + p.id, 'access_levels#' + al, 'access level')); }
+  for (const p of m.org_policies) { if (p.scope_type === 'project') link('org_policies#' + p.id, 'projects#' + p.scope, 'on project'); if (p.scope_type === 'folder') link('org_policies#' + p.id, 'folders#' + p.scope, 'on folder'); }
+  // principal index: who appears where
+  const principals = new Map();
+  for (const b of m.iam_bindings) (principals.get(b.principal) || principals.set(b.principal, []).get(b.principal)).push(b);
+  return { byId, edges, principals };
+}
+function runFindings(m) {
+  const out = [];
+  for (const rule of FINDINGS) { let hits = []; try { hits = rule.test(m) || []; } catch (e) { console.warn('rule failed', rule.id, e); }
+    for (const h of hits) out.push({ rule: rule.id, severity: rule.severity, title: rule.title, ...h }); }
+  const order = { high: 0, med: 1, low: 2 };
+  return out.sort((a, b) => order[a.severity] - order[b.severity] || a.title.localeCompare(b.title));
+}
+const findingsFor = (kind, id) => S.findings.filter(f => f.entity_kind === kind && f.entity_id === id);
+
+/* =========================================================================
+   5. RENDERING
+   ========================================================================= */
+function go(section) { S.section = section; S.selected = null; renderNav(); renderView(); renderDrawer(); }
+function renderNav() {
+  const nav = $('#nav'); let html = ''; let grp = '';
+  const counts = {}; if (S.model) { for (const k of Object.keys(KIND_LABEL)) counts[k] = S.model[k].length; counts.findings = S.findings.length; }
+  for (const s of SECTIONS) {
+    if (s.group !== grp) { grp = s.group; html += `<div class="grp">${grp}</div>`; }
+    const c = s.kind ? counts[s.kind] : s.countOf ? counts[s.countOf] : s.id === 'wif' ? counts.wif_providers : s.id === 'vpc_sc' ? counts.vpc_sc_perimeters : s.id === 'files' ? S.files.length : '';
+    html += `<button data-s="${s.id}" class="${s.id === S.section ? 'active' : ''}" ${S.model ? '' : 'disabled'}>${s.label}<span class="n">${c === undefined ? '' : c}</span></button>`;
+  }
+  nav.innerHTML = html;
+  nav.querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.s));
+}
+function renderView() {
+  const v = $('#view');
+  if (!S.model) { v.innerHTML = landing(); $('#btnLanding') && ($('#btnLanding').onclick = openWithPicker); $('#btnDemo') && ($('#btnDemo').onclick = loadDemo); return; }
+  if (S.query) return renderSearch(v);
+  const s = SECTIONS.find(x => x.id === S.section);
+  if (s.kind) return renderTable(v, s);
+  ({ overview: renderOverview, findings: renderFindings, iam_matrix: renderMatrix, wif: renderWif, vpc_sc: renderVpcSc, files: renderFiles })[s.id](v);
+}
+function landing() {
+  const demo = window.__INFRALENS_DEMO__ ? `<button class="big alt" id="btnDemo">Load sample estate</button>` : '';
+  return `<div id="landing"><h2>Read your infra-config repository</h2>
+  <p>Pick the folder of the repo that holds the JSON passed to your no-code Terraform modules. Everything is parsed here in the browser — nothing is uploaded, no server runs, and nothing is written back.</p>
+  <button class="big" id="btnLanding">Open repo folder</button>${demo}
+  <ol><li>Clone or pull the infra-config repo on this machine.</li><li>Open that folder here. <code>.git</code>, <code>.terraform</code> and <code>node_modules</code> are skipped.</li><li>If a section stays empty, the adapter does not match your file layout yet — see <code>ADAPTER_GUIDE.md</code>.</li></ol></div>`;
+}
+function loadDemo() { const d = window.__INFRALENS_DEMO__; load(d.name, d.files.map(f => ({ ...f }))); }
+
+// ---- overview ----
+function renderOverview(v) {
+  const m = S.model; const sev = { high: 0, med: 0, low: 0 }; S.findings.forEach(f => sev[f.severity]++);
+  const stat = (label, n, section) => `<div class="stat" data-go="${section}"><b>${n}</b><small>${label}</small></div>`;
+  let html = `<h2>Estate overview</h2><p class="sub">${esc(m.meta.org_domain || '')}${m.meta.org_id ? ' · org ' + esc(m.meta.org_id) : ''} · ${S.files.length} files read · adapter <code>${esc(window.InfraLensAdapter.name)}</code></p>`;
+  html += `<div class="stats">${stat('Projects', m.projects.length, 'projects')}${stat('VPC networks', m.networks.length, 'networks')}${stat('Subnets', m.subnets.length, 'subnets')}${stat('Firewall rules', m.firewall_rules.length, 'firewall_rules')}${stat('IAM bindings', m.iam_bindings.length, 'iam_bindings')}${stat('Service accounts', m.service_accounts.length, 'service_accounts')}${stat('WIF providers', m.wif_providers.length, 'wif')}${stat('VPC-SC perimeters', m.vpc_sc_perimeters.length, 'vpc_sc')}${stat('Org policies', m.org_policies.length, 'org_policies')}</div>`;
+  html += `<div class="cols"><div class="box"><h3>Resource hierarchy</h3>${renderTree()}</div>
+  <div class="box"><h3>Findings <span class="chip high">${sev.high} high</span><span class="chip med">${sev.med} medium</span><span class="chip low">${sev.low} low</span></h3>${S.findings.slice(0, 12).map(findingRow).join('') || '<div class="muted">No findings.</div>'}${S.findings.length > 12 ? `<div style="margin-top:8px"><a href="#" data-go="findings">All ${S.findings.length} findings</a></div>` : ''}</div></div>`;
+  if (m.errors.length) html += `<div class="box" style="margin-top:16px"><h3 class="err">Adapter errors</h3>${m.errors.map(e => `<div class="src">${esc(e.file)}: ${esc(e.message)}</div>`).join('')}</div>`;
+  v.innerHTML = html; wire(v);
+}
+function renderTree() {
+  const m = S.model; const inside = new Map(); m.vpc_sc_perimeters.forEach(p => p.projects.forEach(pr => inside.set(pr, p.name)));
+  const kids = (parentId) => m.folders.filter(f => (f.parent || '').replace('folders/', '') === parentId || (parentId === null && !(f.parent || '').startsWith('folders/')));
+  const prjIn = (fid) => m.projects.filter(p => (p.folder || '') === fid);
+  const prjHtml = (p) => { const n = S.findings.filter(f => { if (f.entity_kind === 'projects') return f.entity_id === p.id; const e = (S.index.byId.get(f.entity_kind + '#' + f.entity_id) || {}).e; return e && (e.project === p.id || (e.resource_type === 'project' && e.resource === p.id) || (e.scope_type === 'project' && e.scope === p.id)); }).length;
+    return `<span class="prj" data-open="projects#${esc(p.id)}"><span class="mono">${esc(p.id)}</span>${p.labels?.env ? `<span class="chip">${esc(p.labels.env)}</span>` : ''}${inside.has(p.id) ? `<span class="chip accent" title="VPC-SC perimeter">${esc(inside.get(p.id))}</span>` : ''}${n ? `<span class="chip high">${n}</span>` : ''}</span>`; };
+  const rec = (parentId) => `<ul>${kids(parentId).map(f => `<li><span class="fld" data-open="folders#${esc(f.id)}" style="cursor:pointer">${esc(f.name)}</span> <span class="muted mono">${esc(f.id)}</span>${prjIn(f.id).map(p => `<div>${prjHtml(p)}</div>`).join('')}${rec(f.id)}</li>`).join('')}</ul>`;
+  const orphans = m.projects.filter(p => !p.folder || !m.folders.some(f => f.id === p.folder));
+  return `<div class="tree">${rec(null)}${orphans.length ? `<div style="margin-top:8px"><span class="fld">No folder / unknown folder</span>${orphans.map(p => `<div>${prjHtml(p)}</div>`).join('')}</div>` : ''}</div>`;
+}
+const findingRow = (f) => `<div class="finding-row" data-open="${esc(f.entity_kind)}#${esc(f.entity_id)}"><span class="sev ${f.severity}">${f.severity}</span><div><div class="t">${esc(f.title)}</div><div class="d mono">${esc(f.detail)}</div></div></div>`;
+
+// ---- findings ----
+function renderFindings(v) {
+  const sevF = S.filters.sev || ''; const ruleF = S.filters.rule || '';
+  const list = S.findings.filter(f => (!sevF || f.severity === sevF) && (!ruleF || f.rule === ruleF));
+  const rules = [...new Set(S.findings.map(f => f.rule))];
+  v.innerHTML = `<h2>Findings</h2><p class="sub">Rule-based checks run on the normalized model. Rules live in <code>index.html</code> under <code>FINDINGS</code> — adjust them to your policy.</p>
+  <div class="toolbar"><select data-filter="sev"><option value="">All severities</option>${['high','med','low'].map(s => `<option ${s === sevF ? 'selected' : ''}>${s}</option>`).join('')}</select>
+  <select data-filter="rule"><option value="">All rules</option>${rules.map(r => `<option value="${r}" ${r === ruleF ? 'selected' : ''}>${esc(FINDINGS.find(x => x.id === r).title)}</option>`).join('')}</select>
+  <button class="hbtn" id="btnCsv">Download CSV</button><span class="count">${list.length} of ${S.findings.length}</span></div>
+  <div class="box">${list.map(findingRow).join('') || '<div class="muted">Nothing matches.</div>'}</div>`;
+  wire(v);
+  $('#btnCsv').onclick = () => download('findings.csv', toCsv(list.map(f => ({ severity: f.severity, rule: f.rule, title: f.title, kind: f.entity_kind, entity: f.entity_id, detail: f.detail }))));
+}
+
+// ---- generic table ----
+function fmt(val, type, col) {
+  if (val == null || (Array.isArray(val) && !val.length)) return '<span class="muted">–</span>';
+  switch (type) {
+    case 'bool': return val ? '✓' : '<span class="muted">–</span>';
+    case 'mono': return `<span class="mono">${esc(val)}</span>`;
+    case 'list': return val.map(x => `<span class="chip mono">${esc(x)}</span>`).join('');
+    case 'ranges': return val.map(x => `<span class="chip mono">${esc(x.name)} ${esc(x.cidr)}</span>`).join('');
+    case 'ports': return val.map(x => `<span class="chip mono">${esc(x.protocol)}${x.ports ? ':' + esc(x.ports.join(',')) : ''}</span>`).join('');
+    default: return typeof val === 'object' ? `<span class="mono">${esc(JSON.stringify(val))}</span>` : esc(val);
+  }
+}
+function renderTable(v, s) {
+  const rowsAll = S.model[s.kind]; const f = (S.filters[s.id] || '').toLowerCase();
+  let rows = f ? rowsAll.filter(r => JSON.stringify(r).toLowerCase().includes(f)) : rowsAll.slice();
+  const sort = S.sort[s.id];
+  if (sort) rows.sort((a, b) => { const x = get(a, sort.key), y = get(b, sort.key); const c = (x == null) - (y == null) || (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''))); return sort.dir === 'asc' ? c : -c; });
+  const fcount = (r) => findingsFor(s.kind, r.id).length;
+  v.innerHTML = `<h2>${esc(s.label)}</h2><div class="toolbar"><input type="search" placeholder="Filter rows" value="${esc(S.filters[s.id] || '')}" data-rowfilter="${s.id}"><span class="count">${rows.length} of ${rowsAll.length}</span></div>
+  ${rows.length ? `<div class="tbl"><table><thead><tr>${s.cols.map(c => `<th data-sort="${c[0]}" class="${sort && sort.key === c[0] ? sort.dir : 'sorted'}">${esc(c[1])}</th>`).join('')}<th>Findings</th></tr></thead>
+  <tbody>${rows.map(r => `<tr data-open="${esc(s.kind)}#${esc(r.id)}" class="${S.selected === s.kind + '#' + r.id ? 'sel' : ''}">${s.cols.map(c => `<td>${fmt(get(r, c[0]), c[2], c)}</td>`).join('')}<td>${fcount(r) ? `<span class="chip high">${fcount(r)}</span>` : '<span class="muted">–</span>'}</td></tr>`).join('')}</tbody></table></div>`
+  : `<div class="empty">No ${s.label.toLowerCase()} found. If your repo has them, the adapter is not matching them yet — see ADAPTER_GUIDE.md.</div>`}`;
+  wire(v);
+  v.querySelectorAll('th[data-sort]').forEach(th => th.onclick = () => { const k = th.dataset.sort; const cur = S.sort[s.id]; S.sort[s.id] = { key: k, dir: cur && cur.key === k && cur.dir === 'asc' ? 'desc' : 'asc' }; renderView(); });
+}
+
+// ---- IAM matrix ----
+function renderMatrix(v) {
+  const m = S.model; const mode = S.filters.matrixMode || 'project';
+  const bindings = m.iam_bindings.filter(b => mode === 'project' ? b.resource_type === 'project' : mode === 'sa' ? b.resource_type === 'service_account' : true);
+  const principals = [...new Set(bindings.map(b => b.principal))].sort(); const resources = [...new Set(bindings.map(b => b.resource))].sort();
+  const cell = new Map(); bindings.forEach(b => { const k = b.principal + '|' + b.resource; (cell.get(k) || cell.set(k, []).get(k)).push(b); });
+  const short = (r) => r.replace(/^roles\//, '').replace(/^iam\.serviceAccount/, 'sa.');
+  v.innerHTML = `<h2>Access matrix</h2><p class="sub">Principal × resource. Red cells carry owner/editor or impersonation rights. Click a cell for the bindings.</p>
+  <div class="toolbar"><select data-filter="matrixMode"><option value="project" ${mode === 'project' ? 'selected' : ''}>Projects</option><option value="sa" ${mode === 'sa' ? 'selected' : ''}>Service accounts (who can use them)</option><option value="all" ${mode === 'all' ? 'selected' : ''}>Everything</option></select><span class="count">${principals.length} principals × ${resources.length} resources</span></div>
+  <div class="matrix"><table><thead><tr><th>Principal</th>${resources.map(r => `<th class="rot"><div class="mono">${esc(r)}</div></th>`).join('')}</tr></thead>
+  <tbody>${principals.map(p => `<tr><td class="mono">${esc(p)}</td>${resources.map(r => { const bs = cell.get(p + '|' + r); if (!bs) return '<td class="c"></td>'; const risky = bs.some(b => PRIMITIVE_ROLES.has(b.role) || IMPERSONATION_ROLES.has(b.role)); return `<td class="c has ${risky ? 'risky' : ''}" data-open="iam_bindings#${esc(bs[0].id)}" title="${esc(bs.map(b => b.role).join('\n'))}">${bs.map(b => esc(short(b.role))).join('<br>')}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+  wire(v);
+}
+
+// ---- WIF ----
+function renderWif(v) {
+  const m = S.model;
+  v.innerHTML = `<h2>Workload identity federation</h2><p class="sub">External identities that can obtain Google credentials. Each pool lists its providers (trust) and bindings (what they may act as).</p>
+  ${m.wif_pools.length ? m.wif_pools.map(pool => { const provs = m.wif_providers.filter(p => p.pool === pool.id); const binds = m.wif_bindings.filter(b => b.pool === pool.id);
+    return `<div class="box" style="margin-bottom:14px"><h3><span data-open="wif_pools#${esc(pool.id)}" style="cursor:pointer">${esc(pool.display_name || pool.name)}</span> <span class="muted mono">${esc(pool.id)}</span>${pool.disabled ? '<span class="chip">disabled</span>' : ''}</h3>
+    <table><thead><tr><th>Provider</th><th>Type</th><th>Issuer</th><th>Attribute condition</th><th>Mapping</th></tr></thead><tbody>${provs.map(p => `<tr data-open="wif_providers#${esc(p.id)}"><td class="mono">${esc(p.name)}</td><td>${esc(p.type || '')}</td><td class="mono">${esc(p.issuer_uri || '')}</td><td>${p.attribute_condition ? `<code>${esc(p.attribute_condition)}</code>` : '<span class="chip high">none</span>'}</td><td>${Object.entries(p.attribute_mapping || {}).map(([k, x]) => `<span class="chip mono">${esc(k)} ← ${esc(x)}</span>`).join('')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No providers</td></tr>'}</tbody></table>
+    <div style="height:10px"></div>
+    <table><thead><tr><th>Principal set</th><th>Acts as service account</th></tr></thead><tbody>${binds.map(b => `<tr data-open="wif_bindings#${esc(b.id)}"><td class="mono">${esc(b.principal_set)}</td><td class="mono">${esc(b.service_account)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No bindings</td></tr>'}</tbody></table></div>`; }).join('')
+  : '<div class="empty">No workload identity pools found.</div>'}`;
+  wire(v);
+}
+
+// ---- VPC-SC ----
+function renderVpcSc(v) {
+  const m = S.model; const inside = new Set(m.vpc_sc_perimeters.flatMap(p => p.projects));
+  const outside = m.projects.filter(p => !inside.has(p.id));
+  v.innerHTML = `<h2>VPC Service Controls</h2><p class="sub">${m.vpc_sc_perimeters.length} perimeter(s), ${m.access_levels.length} access level(s). ${outside.length} project(s) are outside every perimeter.</p>
+  ${m.vpc_sc_perimeters.map(p => `<div class="box" style="margin-bottom:14px"><h3><span data-open="vpc_sc_perimeters#${esc(p.id)}" style="cursor:pointer">${esc(p.title || p.name)}</span> <span class="muted mono">${esc(p.name)}</span> <span class="chip">${esc(p.perimeter_type || 'regular')}</span></h3>
+    <dl><dt>Projects</dt><dd>${p.projects.map(x => `<span class="chip mono" data-open="projects#${esc(x)}" style="cursor:pointer">${esc(x)}</span>`).join('')}</dd>
+    <dt>Restricted services</dt><dd>${(p.restricted_services || []).map(x => `<span class="chip mono">${esc(x)}</span>`).join('') || '<span class="muted">none</span>'}</dd>
+    <dt>Access levels</dt><dd>${(p.access_levels || []).map(x => `<span class="chip accent mono" data-open="access_levels#${esc(x)}" style="cursor:pointer">${esc(x)}</span>`).join('') || '<span class="muted">none</span>'}</dd>
+    <dt>Ingress</dt><dd>${(p.ingress_policies || []).length ? `<pre>${esc(JSON.stringify(p.ingress_policies, null, 2))}</pre>` : '<span class="muted">none</span>'}</dd>
+    <dt>Egress</dt><dd>${(p.egress_policies || []).length ? `<pre>${esc(JSON.stringify(p.egress_policies, null, 2))}</pre>` : '<span class="muted">none</span>'}</dd></dl></div>`).join('') || '<div class="empty">No perimeters found.</div>'}
+  ${outside.length ? `<div class="box"><h3>Outside every perimeter</h3>${outside.map(p => `<span class="chip mono ${p.labels?.env === 'prod' ? 'high' : ''}" data-open="projects#${esc(p.id)}" style="cursor:pointer">${esc(p.id)}</span>`).join('')}</div>` : ''}
+  ${m.access_levels.length ? `<div class="box" style="margin-top:14px"><h3>Access levels</h3><table><thead><tr><th>Name</th><th>Title</th><th>Conditions</th></tr></thead><tbody>${m.access_levels.map(a => `<tr data-open="access_levels#${esc(a.id)}"><td class="mono">${esc(a.name)}</td><td>${esc(a.title || '')}</td><td><code>${esc(JSON.stringify(a.conditions))}</code></td></tr>`).join('')}</tbody></table></div>` : ''}`;
+  wire(v);
+}
+
+// ---- files ----
+function renderFiles(v) {
+  const used = new Set(); for (const k of Object.keys(KIND_LABEL)) S.model[k].forEach(e => e.source && used.add(e.source.file));
+  v.innerHTML = `<h2>Source files</h2><p class="sub">${S.files.length} files read. Files the adapter did not use are listed so you can see what the mapping is missing.</p>
+  <table><thead><tr><th>Path</th><th>Type</th><th>Size</th><th>Used by adapter</th><th>Parse</th></tr></thead><tbody>${S.files.map(f => `<tr><td class="mono">${esc(f.path)}</td><td>${esc(f.ext)}</td><td>${(f.text.length / 1024).toFixed(1)} KB</td><td>${used.has(f.path) ? '✓' : '<span class="chip med">unused</span>'}</td><td>${f.parseError ? `<span class="err">${esc(f.parseError)}</span>` : f.json ? 'json' : '<span class="muted">text</span>'}</td></tr>`).join('')}</tbody></table>`;
+}
+
+// ---- global search ----
+function renderSearch(v) {
+  const q = S.query.toLowerCase(); const hits = [];
+  for (const [key, { kind, e }] of S.index.byId) if (JSON.stringify(e).toLowerCase().includes(q)) hits.push({ key, kind, e });
+  const groups = {}; hits.forEach(h => (groups[h.kind] = groups[h.kind] || []).push(h));
+  v.innerHTML = `<h2>Search: <span class="mono">${esc(S.query)}</span></h2><p class="sub">${hits.length} matches across ${Object.keys(groups).length} entity types. Press Esc to clear.</p>
+  ${Object.entries(groups).map(([k, hs]) => `<div class="box" style="margin-bottom:12px"><h3>${KIND_LABEL[k]} <span class="muted">${hs.length}</span></h3>${hs.slice(0, 50).map(h => `<div class="rel" data-open="${esc(h.key)}"><span class="mono">${esc(h.e.id)}</span><span class="k">${esc(h.e.name || h.e.role || h.e.constraint || '')}</span></div>`).join('')}${hs.length > 50 ? `<div class="muted">…${hs.length - 50} more</div>` : ''}</div>`).join('') || '<div class="empty">No matches.</div>'}`;
+  wire(v);
+}
+
+// ---- drawer ----
+function renderDrawer() {
+  const main = $('#main'), d = $('#drawer');
+  if (!S.selected || !S.index) { main.classList.remove('with-drawer'); d.innerHTML = ''; return; }
+  const hit = S.index.byId.get(S.selected); if (!hit) { S.selected = null; return renderDrawer(); }
+  const { kind, e } = hit; main.classList.add('with-drawer');
+  const fields = Object.entries(e).filter(([k]) => !['source', 'id'].includes(k));
+  const rels = (S.index.edges.get(S.selected) || []).map(r => ({ ...r, t: S.index.byId.get(r.to) }));
+  const fnd = findingsFor(kind, e.id);
+  const principalRels = kind === 'service_accounts' ? (S.index.principals.get('serviceAccount:' + e.id) || []) : [];
+  d.innerHTML = `<div class="hd"><div><div class="k">${KIND_LABEL[kind]}</div><h3 class="mono">${esc(e.id)}</h3></div><button class="close" aria-label="Close">×</button></div>
+  ${fnd.length ? `<section><h4>Findings</h4>${fnd.map(findingRow).join('')}</section>` : ''}
+  <section><h4>Fields</h4><dl>${fields.map(([k, val]) => `<dt>${esc(k)}</dt><dd>${fmt(val, Array.isArray(val) ? (val[0] && typeof val[0] === 'object' ? (val[0].protocol ? 'ports' : val[0].cidr ? 'ranges' : '') : 'list') : typeof val === 'boolean' ? 'bool' : /id|email|role|principal|resource|cidr|network|project|scope|constraint|pool|issuer/.test(k) ? 'mono' : '')}</dd>`).join('')}</dl></section>
+  ${principalRels.length ? `<section><h4>This SA holds (${principalRels.length})</h4>${principalRels.map(b => `<div class="rel" data-open="iam_bindings#${esc(b.id)}"><span class="mono">${esc(b.role)}</span><span class="k">${esc(b.resource_type)} ${esc(b.resource)}</span></div>`).join('')}</section>` : ''}
+  <section><h4>Related (${rels.length})</h4>${rels.map(r => `<div class="rel" data-open="${esc(r.to)}"><span class="mono">${esc(r.t.e.id)}</span><span class="k">${esc(r.label)} · ${KIND_LABEL[r.t.kind]}</span></div>`).join('') || '<span class="muted">No links</span>'}</section>
+  <section><h4>Source</h4><div class="src">${esc(e.source?.file || '?')}${e.source?.path ? ' → ' + esc(e.source.path) : ''}</div><div style="height:8px"></div><pre>${esc(sourceSnippet(e))}</pre></section>`;
+  $('.close', d).onclick = () => { S.selected = null; renderView(); renderDrawer(); };
+  wire(d);
+}
+function sourceSnippet(e) {
+  const f = S.files.find(x => x.path === (e.source && e.source.file)); if (!f || !f.json || !e.source.path) return JSON.stringify(e, null, 2);
+  const node = e.source.path.replace(/\[(\d+)\]/g, '.$1').split('.').reduce((a, k) => (a == null ? undefined : a[k]), f.json);
+  return JSON.stringify(node === undefined ? e : node, null, 2);
+}
+
+// ---- wiring + utilities ----
+function wire(root) {
+  root.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', (ev) => { ev.stopPropagation(); const key = el.dataset.open; const [kind] = key.split('#');
+    if (S.query) { S.query = ''; $('#search').value = ''; const sec = SECTIONS.find(s => s.kind === kind); S.section = sec ? sec.id : S.section; }
+    S.selected = key; renderNav(); renderView(); renderDrawer(); }));
+  root.querySelectorAll('[data-go]').forEach(el => el.addEventListener('click', (ev) => { ev.preventDefault(); go(el.dataset.go); }));
+  root.querySelectorAll('[data-filter]').forEach(el => el.addEventListener('change', () => { S.filters[el.dataset.filter] = el.value; renderView(); }));
+  root.querySelectorAll('[data-rowfilter]').forEach(el => { let t; el.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { S.filters[el.dataset.rowfilter] = el.value; const pos = el.selectionStart; renderView(); const n = $(`[data-rowfilter="${el.dataset.rowfilter}"]`); n.focus(); n.setSelectionRange(pos, pos); }, 150); }); });
+}
+function toCsv(rows) { if (!rows.length) return ''; const cols = Object.keys(rows[0]); const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"'; return [cols.join(','), ...rows.map(r => cols.map(c => q(r[c])).join(','))].join('\n'); }
+function download(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+
+$('#btnOpen').onclick = openWithPicker;
+$('#dirInput').addEventListener('change', openFromInput);
+$('#btnExport').onclick = () => download('infralens-model.json', JSON.stringify(S.model, null, 2));
+$('#btnTheme').onclick = () => { const r = document.documentElement; const dark = r.dataset.theme === 'dark' || (!r.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches); r.dataset.theme = dark ? 'light' : 'dark'; };
+let st; $('#search').addEventListener('input', (e) => { clearTimeout(st); st = setTimeout(() => { S.query = e.target.value.trim(); S.selected = null; renderView(); renderDrawer(); }, 200); });
+$('#search').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.target.value = ''; S.query = ''; renderView(); } });
+document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== $('#search') && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $('#search').focus(); } });
+
+renderNav(); renderView();
+})();
+</script>
+</body>
+</html>
