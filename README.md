@@ -32,6 +32,18 @@ Point it at the folder of your infra-config repo and get:
 `.git`, `.terraform` and `node_modules` are skipped. Only `.json`, `.tf`, `.tfvars`,
 `.yaml`, `.yml`, `.hcl`, `.md` are read.
 
+## Two data sources, same dashboard
+
+| Source | Adapter | How |
+|---|---|---|
+| The infra-config repo (**declared** state) | `adapters/default.js` | Open the repo folder |
+| The live estate via gcloud (**actual** state) | `adapters/gcloud.js` | Run `export-gcloud.cmd` (read-only, needs an authenticated gcloud), then open the `snapshot` folder it writes |
+
+The dashboard detects which kind of folder you opened and picks the adapter. The
+gcloud path needs no adapter work at all — gcloud's JSON shapes are standard. If
+PowerShell scripts are blocked, the wrapper tells you how to run the same exporter
+through the Python that ships inside the Cloud SDK.
+
 ## Fit it to your repo
 
 The default adapter (`adapters/default.js`) expects the layout in

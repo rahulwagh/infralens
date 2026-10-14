@@ -29,7 +29,7 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const adapter = fs.readFileSync(adapterPath, 'utf8');
 const demo = { name: path.basename(folder), files: readTree(folder) };
 const safe = (s) => s.replace(/<\/script/gi, '<\\/script');
-const result = html.replace('<script src="adapters/default.js"></script>',
-  `<script>${safe(adapter)}</script>\n<script>window.__INFRALENS_DEMO__ = ${safe(JSON.stringify(demo))};</script>`);
+const result = html.replace(/<script src="adapters\/[^"]+"><\/script>\s*/g, '').replace('<script>\n(function () {',
+  `<script>${safe(adapter)}</script>\n<script>window.__INFRALENS_DEMO__ = ${safe(JSON.stringify(demo))};</script>\n<script>\n(function () {`);
 fs.writeFileSync(out, result);
 console.log(`wrote ${out} (${(result.length / 1024).toFixed(0)} KB, ${demo.files.length} files inlined)`);

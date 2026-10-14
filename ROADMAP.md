@@ -21,6 +21,16 @@ independently.
 5. Write down which findings are noise for your policy and which checks are missing.
    Those go into `FINDINGS`.
 
+## Parked until gcloud is available on the laptop
+
+- `export-gcloud.cmd` / `tools/export-gcloud.ps1` / `tools/export_gcloud.py` and
+  `adapters/gcloud.js` are written but untested against a real estate. First run:
+  `export-gcloud.cmd -SkipSaPolicies -Projects <one-project>` to check permissions
+  and output shapes, then a full run. Report anything in `_errors.log` and any empty
+  section in the dashboard.
+- Once both sources load, the next feature is declared-vs-actual diff (repo folder
+  + snapshot folder side by side).
+
 ## Claude — outside
 
 - [ ] Group membership expansion: optional `groups` entity (group → members) so the

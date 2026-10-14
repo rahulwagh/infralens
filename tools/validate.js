@@ -33,10 +33,10 @@ function readTree(dir, prefix = '') {
 
 global.window = {};
 require(adapterPath);
-const adapter = global.window.InfraLensAdapter;
-if (!adapter) { console.error('Adapter did not set window.InfraLensAdapter'); process.exit(1); }
-
 const files = readTree(folder);
+const adapters = global.window.InfraLensAdapters || [];
+const adapter = adapters.find(a => a.detect && a.detect(files)) || adapters[0];
+if (!adapter) { console.error('Adapter did not register in window.InfraLensAdapters'); process.exit(1); }
 const model = adapter.extract(files);
 
 console.log(`adapter: ${adapter.name}`);

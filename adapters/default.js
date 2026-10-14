@@ -180,8 +180,11 @@
   }
 
   // ---------- entry point ----------
-  window.InfraLensAdapter = {
+  window.InfraLensAdapters = window.InfraLensAdapters || [];
+  window.InfraLensAdapters.push({
     name: 'default-gcp-landing-zone',
+    // Claims a folder when at least one file looks like a no-code project config.
+    detect: (files) => files.some(isProjectFile) || files.some(isFoldersFile),
     extract(files) {
       const { model, emit } = makeEmitter();
       for (const f of files) {
@@ -197,5 +200,5 @@
       }
       return model;
     }
-  };
+  });
 })();

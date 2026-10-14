@@ -152,6 +152,7 @@
 <input type="file" id="dirInput" webkitdirectory directory multiple hidden>
 
 <script src="adapters/default.js"></script>
+<script src="adapters/gcloud.js"></script>
 <script>
 (function () {
 'use strict';
@@ -282,8 +283,10 @@ async function openFromInput(ev) {
 function load(name, files) {
   for (const f of files) { if (f.ext === 'json') { try { f.json = JSON.parse(f.text); } catch (e) { f.parseError = e.message; } } }
   S.files = files.sort((a, b) => a.path.localeCompare(b.path));
-  const adapter = window.InfraLensAdapter;
-  if (!adapter) { alert('No adapter loaded. Check adapters/default.js is next to index.html.'); return; }
+  const adapters = window.InfraLensAdapters || [];
+  const adapter = adapters.find(a => { try { return a.detect && a.detect(files); } catch (e) { return false; } }) || adapters[0];
+  if (!adapter) { alert('No adapter loaded. Check the adapters/ folder is next to index.html.'); return; }
+  window.InfraLensAdapter = adapter;
   S.model = normalize(adapter.extract(files));
   S.index = buildIndex(S.model);
   S.findings = runFindings(S.model);
