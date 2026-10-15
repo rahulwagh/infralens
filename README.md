@@ -54,11 +54,13 @@ infralens\
 ```
 
 1. Copy `repos.example.txt` to `repos.txt` and add your Bitbucket URLs. An
-   optional second word on a line sets the folder name. A read-only HTTP access
-   token may be embedded, `https://USER:TOKEN@host/scm/proj/repo.git`: git gets it
-   as is, while InfraLens blanks it out of `sync.log`, `sync-status.json` and the
-   dashboard. It remains in plain text in `repos.txt` and each clone's
-   `.git\config` on that machine (both gitignored).
+   optional second word on a line sets the folder name. SSH URLs are the
+   recommended form, `ssh://git@host:7999/proj/repo.git` (Bitbucket Server's SSH
+   port is usually 7999): register your public key in Bitbucket once and nothing
+   secret touches the disk. HTTPS works too, optionally with a read-only HTTP access
+   token embedded, `https://USER:TOKEN@host/scm/proj/repo.git`: git gets it as is,
+   InfraLens blanks it out of `sync.log`, `sync-status.json` and the dashboard, but
+   it remains in plain text in `repos.txt` and each clone's `.git\config`.
 2. Run `sync.cmd` (double-click, or `./sync.sh` from Git Bash when batch files
    are blocked). Each repository is cloned the first time and `git pull --ff-only`ed
    after that, with your own git credentials and proxy: Git Credential Manager asks

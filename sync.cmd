@@ -43,11 +43,16 @@ set "TMPLOG=%TEMP%\infralens-git.tmp"
 for /f "usebackq eol=# tokens=1,2 delims=	 " %%A in ("%REPOS%") do (
   set "URL=%%A"
   set "NAME=%%B"
-  rem URLs may carry credentials: https://user:token@host/scm/repo.git
+  rem http(s) URLs may carry credentials: https://user:token@host/scm/repo.git
   rem SAFE is the URL without them - used for names, the log, the status file.
+  rem ssh URLs (ssh://git@host:7999/proj/repo.git, git@host:proj/repo.git) are
+  rem left alone: "git@" is the user name, not a secret.
   set "SAFE=!URL!"
   set "CRED="
-  for /f "tokens=1,* delims=@" %%X in ("!URL!") do if not "%%Y"=="" (
+  set "ISHTTP="
+  if /I "!URL:~0,7!"=="http://" set "ISHTTP=1"
+  if /I "!URL:~0,8!"=="https://" set "ISHTTP=1"
+  if defined ISHTTP for /f "tokens=1,* delims=@" %%X in ("!URL!") do if not "%%Y"=="" (
     set "CRED=%%X"
     set "SAFE=https://%%Y"
     if /I "!URL:~0,7!"=="http://" set "SAFE=http://%%Y"

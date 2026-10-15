@@ -68,7 +68,9 @@ files (.tf/.tfvars/JSON/YAML text)  →  adapter (adapters/*.js)  →  canonical
   (localhost:63342) — relative `estate.js` works there too. The **Repositories**
   section (`renderRepos`) shows list + status and can write `repos.txt` via the File
   System Access API (asks for the InfraLens folder), download fallback.
-  Rahul uses `https://USER:TOKEN@host/scm/...` URLs with a read-only token: both
+  Rahul moved to SSH URLs (`ssh://git@host:7999/proj/repo.git`); `@` is only
+  treated as credentials when the URL starts with http(s). Earlier he used
+  `https://USER:TOKEN@host/scm/...` URLs with a read-only token: both
   scripts compute SAFE (credentials stripped) for names, log, status and echo, pass
   the raw URL only to git, and scrub git's output before appending to sync.log
   (`call set` trick in batch, `index()` loop in awk). `redactUrl()` in index.html

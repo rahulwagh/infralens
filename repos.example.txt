@@ -1,11 +1,12 @@
-# InfraLens repositories - one URL per line. Optional second word = folder name.
+# InfraLens repositories - one per line. Optional second word = folder name.
 # Lines starting with # are ignored. Copy this file to repos.txt and add yours.
 #
-# A read-only HTTP access token can go in the URL. It is passed to git as is and
-# blanked out in sync.log, sync-status.json and the dashboard. It stays in plain
-# text in this file and in each clone's .git\config, on this machine only
-# (repos.txt and repos\ are gitignored).
+# SSH (recommended - no token on disk; needs your SSH key registered in Bitbucket):
+# ssh://git@bitbucket.example.com:7999/plat/tf-landing-zone.git
+# ssh://git@bitbucket.example.com:7999/plat/tf-network.git   network
 #
+# HTTPS, optionally with a read-only HTTP access token in the URL. The token is
+# passed to git as is and blanked out in sync.log, sync-status.json and the
+# dashboard, but stays in plain text here and in each clone's .git\config:
 # https://bitbucket.example.com/scm/plat/tf-landing-zone.git
-# https://USER_ID:TOKEN@bitbucket.example.com/scm/plat/tf-network.git
 # https://USER_ID:TOKEN@bitbucket.example.com/scm/plat/tf-iam.git   iam
