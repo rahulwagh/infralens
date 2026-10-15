@@ -54,7 +54,11 @@ infralens\
 ```
 
 1. Copy `repos.example.txt` to `repos.txt` and add your Bitbucket URLs. An
-   optional second word on a line sets the folder name.
+   optional second word on a line sets the folder name. A read-only HTTP access
+   token may be embedded, `https://USER:TOKEN@host/scm/proj/repo.git`: git gets it
+   as is, while InfraLens blanks it out of `sync.log`, `sync-status.json` and the
+   dashboard. It remains in plain text in `repos.txt` and each clone's
+   `.git\config` on that machine (both gitignored).
 2. Run `sync.cmd` (double-click, or `./sync.sh` from Git Bash when batch files
    are blocked). Each repository is cloned the first time and `git pull --ff-only`ed
    after that, with your own git credentials and proxy: Git Credential Manager asks

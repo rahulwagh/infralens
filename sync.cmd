@@ -35,24 +35,44 @@ set /a FAIL=0
 set /a N=0
 set "JSON="
 
+set "TMPLOG=%TEMP%\infralens-git.tmp"
 for /f "usebackq eol=# tokens=1,2 delims=	 " %%A in ("%REPOS%") do (
   set "URL=%%A"
   set "NAME=%%B"
-  if "!NAME!"=="" for %%F in ("%%A") do set "NAME=%%~nF"
+  rem URLs may carry credentials: https://user:token@host/scm/repo.git
+  rem SAFE is the URL without them - used for names, the log, the status file.
+  set "SAFE=!URL!"
+  set "CRED="
+  for /f "tokens=1,* delims=@" %%X in ("!URL!") do if not "%%Y"=="" (
+    set "CRED=%%X"
+    set "SAFE=https://%%Y"
+    if /I "!URL:~0,7!"=="http://" set "SAFE=http://%%Y"
+  )
+  if defined CRED (
+    set "CRED=!CRED:*//=!"
+  )
+  if "!NAME!"=="" for %%F in ("!SAFE:/=\!") do set "NAME=%%~nF"
   set "DIR=%DEST%\!NAME!"
   set "RESULT=ok"
   set "MSG="
   >>"%LOG%" echo.
-  >>"%LOG%" echo === !NAME!  !URL!
+  >>"%LOG%" echo === !NAME!  !SAFE!
   if exist "!DIR!\.git" (
     echo   pull   !NAME!
-    git -C "!DIR!" pull --ff-only >>"%LOG%" 2>&1
+    git -C "!DIR!" pull --ff-only >"%TMPLOG%" 2>&1
     if errorlevel 1 ( set "RESULT=failed" & set "MSG=git pull failed - see sync.log" )
   ) else (
     echo   clone  !NAME!
-    git clone "!URL!" "!DIR!" >>"%LOG%" 2>&1
+    git clone "!URL!" "!DIR!" >"%TMPLOG%" 2>&1
     if errorlevel 1 ( set "RESULT=failed" & set "MSG=git clone failed - see sync.log" )
   )
+  rem copy git's output to the log with the credentials blanked out
+  for /f "usebackq delims=" %%Z in ("%TMPLOG%") do (
+    set "L=%%Z"
+    if defined CRED call set "L=%%L:!CRED!@=***@%%"
+    >>"%LOG%" echo(!L!
+  )
+  del "%TMPLOG%" >nul 2>&1
   set "COMMIT="
   set "BRANCH="
   set "WHEN="
@@ -75,7 +95,7 @@ for /f "usebackq eol=# tokens=1,2 delims=	 " %%A in ("%REPOS%") do (
   set /a N+=1
   echo          !RESULT!  !BRANCH! !COMMIT!  !MSG!
   if defined JSON set "JSON=!JSON!,"
-  set "JSON=!JSON!{"name":"!NAME!","url":"!URL!","folder":"!NAME!","result":"!RESULT!","message":"!MSG!","branch":"!BRANCH!","commit":"!COMMIT!","commit_date":"!WHEN!","subject":"!SUBJECT!"}"
+  set "JSON=!JSON!{"name":"!NAME!","url":"!SAFE!","folder":"!NAME!","result":"!RESULT!","message":"!MSG!","branch":"!BRANCH!","commit":"!COMMIT!","commit_date":"!WHEN!","subject":"!SUBJECT!"}"
 )
 
 set "DESTJ=%DEST:\=/%"

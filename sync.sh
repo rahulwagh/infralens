@@ -44,14 +44,20 @@ esc() { printf '%s' "$1" | sed 's/\\/\//g; s/"/'"'"'/g'; }
 while IFS= read -r line || [ -n "$line" ]; do
   line="${line%%#*}"; set -- $line; [ $# -eq 0 ] && continue
   URL="$1"; NAME="${2:-}"
-  if [ -z "$NAME" ]; then NAME="$(basename "$URL")"; NAME="${NAME%.git}"; fi
+  # URLs may carry credentials (https://user:token@host/...). SAFE drops them and
+  # is what gets logged, displayed and written to sync-status.json.
+  SAFE="$(printf '%s' "$URL" | sed -E 's#^(https?://)[^/@]+@#\1#')"
+  CRED="$(printf '%s' "$URL" | sed -nE 's#^https?://([^/@]+)@.*#\1#p')"
+  if [ -z "$NAME" ]; then NAME="$(basename "$SAFE")"; NAME="${NAME%.git}"; fi
   DIR="$DEST/$NAME"; RESULT=ok; MSG=""
-  { echo; echo "=== $NAME  $URL"; } >> "$LOG"
+  { echo; echo "=== $NAME  $SAFE"; } >> "$LOG"
+  TMPLOG="$(mktemp 2>/dev/null || echo "$HERE/.git.tmp")"
   if [ -d "$DIR/.git" ]; then
-    echo "  pull   $NAME"; git -C "$DIR" pull --ff-only >> "$LOG" 2>&1 || { RESULT=failed; MSG="git pull failed - see sync.log"; }
+    echo "  pull   $NAME"; git -C "$DIR" pull --ff-only > "$TMPLOG" 2>&1 || { RESULT=failed; MSG="git pull failed - see sync.log"; }
   else
-    echo "  clone  $NAME"; git clone "$URL" "$DIR" >> "$LOG" 2>&1 || { RESULT=failed; MSG="git clone failed - see sync.log"; }
+    echo "  clone  $NAME"; git clone "$URL" "$DIR" > "$TMPLOG" 2>&1 || { RESULT=failed; MSG="git clone failed - see sync.log"; }
   fi
+  awk -v c="${CRED}@" 'c != "@" { while ((i = index($0, c)) > 0) $0 = substr($0, 1, i - 1) "***@" substr($0, i + length(c)) } 1' "$TMPLOG" >> "$LOG"; rm -f "$TMPLOG"
   COMMIT=""; BRANCH=""; WHEN=""; SUBJECT=""
   if [ -d "$DIR/.git" ]; then
     COMMIT="$(git -C "$DIR" rev-parse --short HEAD 2>/dev/null)"; BRANCH="$(git -C "$DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
@@ -60,7 +66,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   if [ "$RESULT" = ok ]; then OK=$((OK+1)); else FAIL=$((FAIL+1)); fi; N=$((N+1))
   echo "         $RESULT  $BRANCH $COMMIT  $MSG"
   [ -n "$JSON" ] && JSON="$JSON,"
-  JSON="$JSON{\"name\":\"$NAME\",\"url\":\"$URL\",\"folder\":\"$NAME\",\"result\":\"$RESULT\",\"message\":\"$MSG\",\"branch\":\"$BRANCH\",\"commit\":\"$COMMIT\",\"commit_date\":\"$WHEN\",\"subject\":\"$SUBJECT\"}"
+  JSON="$JSON{\"name\":\"$NAME\",\"url\":\"$SAFE\",\"folder\":\"$NAME\",\"result\":\"$RESULT\",\"message\":\"$MSG\",\"branch\":\"$BRANCH\",\"commit\":\"$COMMIT\",\"commit_date\":\"$WHEN\",\"subject\":\"$SUBJECT\"}"
 done < "$REPOS"
 printf '{"tool":"sync.sh","synced_at":"%s","workspace":"%s","ok":%d,"failed":%d,"repos":[%s]}\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$DEST" "$OK" "$FAIL" "$JSON" > "$STATUS"
 echo; echo "Done: $OK ok, $FAIL failed ($N listed). Details in sync.log"
