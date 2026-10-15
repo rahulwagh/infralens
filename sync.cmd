@@ -10,6 +10,7 @@ rem    sync.log           git output
 rem  Run it, then open or refresh index.html. Git handles credentials and proxy.
 rem ---------------------------------------------------------------------------
 set "HERE=%~dp0"
+pushd "%HERE%"
 rem Local git options for this script only (never --global). Copy
 rem sync.local.example.cmd to sync.local.cmd and edit; it is gitignored.
 set "GITOPTS="
@@ -121,13 +122,17 @@ for /f "delims=" %%G in ('where git 2^>nul') do if not defined BASH (
   set "BASH=!BASH:\mingw64\bin\git.exe=\bin\bash.exe!"
   set "BASH=!BASH:\bin\git.exe=\bin\bash.exe!"
 )
+set "HEREFS=%HERE:\=/%"
 if defined BASH if exist "!BASH!" (
-  "!BASH!" "%HERE%sync.sh" --build-only
+  echo Building estate.js with "!BASH!"
+  "!BASH!" "!HEREFS!sync.sh" --build-only
   goto :done
 )
+echo Git bash.exe not found - building estate.js with PowerShell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $h='%HERE:'=''%'; $files=@(); foreach($f in @('repos.txt','sync-status.json')){ if(Test-Path (Join-Path $h $f)){ $files += [pscustomobject]@{path=$f;text=[IO.File]::ReadAllText((Join-Path $h $f))} } }; Get-ChildItem -Path (Join-Path $h 'repos') -Recurse -File -Include *.tf,*.tfvars,*.json,*.yaml,*.yml,*.hcl,*.md,*.txt | Where-Object { $_.FullName -notmatch '\\(\.git|\.terraform|node_modules)\\' } | ForEach-Object { $files += [pscustomobject]@{path=($_.FullName.Substring((Join-Path $h 'repos').Length+1) -replace '\\','/');text=[IO.File]::ReadAllText($_.FullName)} }; $o=[pscustomobject]@{name='infralens';generated_at=(Get-Date -Format 's');workspace=(Join-Path $h 'repos');files=$files}; 'window.__INFRALENS_ESTATE__ = ' + ($o | ConvertTo-Json -Compress -Depth 4) + ';' | Set-Content -Encoding UTF8 (Join-Path $h 'estate.js'); 'Dashboard data: ' + $files.Count + ' files written to estate.js' }"
 if errorlevel 1 echo Could not write estate.js ^(neither Git bash nor PowerShell worked^). Open index.html and use Open folder on "%DEST%".
 :done
 echo Now open index.html, or refresh it if it is already open.
+popd
 endlocal
 exit /b 0

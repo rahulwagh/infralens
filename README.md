@@ -69,7 +69,8 @@ infralens\
 3. Open `index.html`, or refresh it if it is open — from disk or from a local
    server such as IntelliJ's (`http://localhost:63342/...`). It loads `estate.js`
    by itself. That is a file on disk, so it is there after every restart until the
-   next sync replaces it.
+   next sync replaces it. The overview's first line names the repository folders
+   it contains; `sync.cmd` prints a file count per folder when it writes it.
 
 Git options that should apply to the sync only — not to git globally — go in
 `sync.local.cmd` / `sync.local.sh` (copy the `.example` file; gitignored). The

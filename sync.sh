@@ -5,7 +5,8 @@
 #   ./sync.sh                 clone or pull every repo, then write estate.js
 #   ./sync.sh --build-only    only rewrite estate.js
 set -u
-HERE="$(cd "$(dirname "$0")" && pwd)"
+SELF="$0"; command -v cygpath >/dev/null 2>&1 && SELF="$(cygpath -u "$SELF")"   # Git Bash: sync.cmd passes a Windows path
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
 # Local git options for this script only (never --global): copy
 # sync.local.example.sh to sync.local.sh and edit; it is gitignored.
 GITOPTS=""
@@ -34,7 +35,10 @@ build_estate() {
       print "]};"
       printf "%d", n > "/dev/stderr"
     }' > "$ESTATE" 2> "$LIST.n"
-  echo "Dashboard data: $(cat "$LIST.n" 2>/dev/null) files written to estate.js"; rm -f "$LIST" "$LIST.n"
+  echo "Dashboard data: $(cat "$LIST.n" 2>/dev/null) files written to $ESTATE"
+  # per repository folder, so a missing one is obvious
+  sed -n 's|^repos/\([^/]*\)/.*|\1|p' "$LIST" | sort | uniq -c | awk '{ printf "   repos/%s: %s files\n", $2, $1 }'
+  rm -f "$LIST" "$LIST.n"
 }
 if [ -n "$BUILDONLY" ]; then build_estate; exit 0; fi
 

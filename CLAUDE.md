@@ -63,8 +63,11 @@ files (.tf/.tfvars/JSON/YAML text)  →  adapter (adapters/*.js)  →  canonical
   `sync-status.json` at the root; built by one awk program in `sync.sh`
   (`--build-only`), `sync.cmd` calls Git's `bash.exe` for it and falls back to an
   inline PowerShell command. `index.html` includes `estate.js` (404 harmless) and
-  `boot()` loads it unless the IndexedDB saved copy is newer; header button is
-  **Reload** in that mode. Rahul serves index.html from IntelliJ's built-in server
+  `boot()` loads it whenever it has files — estate.js is the source of truth,
+  the IndexedDB saved copy is used only without it (Rahul reported "not all repos
+  show" when the older newest-wins rule picked a hand-opened folder); header
+  button is **Reload** in that mode. The overview's first line lists the repo
+  folders found in estate.js; sync prints per-folder file counts. Rahul serves index.html from IntelliJ's built-in server
   (localhost:63342) — relative `estate.js` works there too. The **Repositories**
   section (`renderRepos`) shows list + status and can write `repos.txt` via the File
   System Access API (asks for the InfraLens folder), download fallback.

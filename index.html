@@ -356,15 +356,16 @@ function renderStatus() {
   $('#btnRescan').textContent = S.fromEstate ? 'Reload' : 'Re-scan';
   $('#btnRescan').title = S.fromEstate ? 'Reload estate.js written by the last sync' : S.handle ? 'Re-read ' + S.name + ' from disk (after git pull)' : 'Pick the folder again to re-read it';
 }
-// On startup: estate.js from the last sync wins unless a saved copy is newer.
+// On startup: estate.js (written by the last sync) is the source of truth whenever
+// it exists and has files. The browser's saved copy is only used without it.
 async function boot() {
   const est = window.__INFRALENS_ESTATE__;
-  const saved = est ? await kvGet('repo') : null;
-  if (est && est.files && !(saved && saved.scannedAt && est.generated_at && new Date(saved.scannedAt) > new Date(est.generated_at))) {
+  if (est && Array.isArray(est.files) && est.files.length) {
     S.handle = (await kvGet('handle')) || null;
     load(est.name || 'repos', est.files.map(f => ({ path: f.path, text: f.text })), { scannedAt: est.generated_at, estate: true });
     return;
   }
+  if (est) S.estateEmpty = true;
   restore();
 }
 function load(name, files, opts) {
@@ -476,7 +477,8 @@ function renderView() {
 }
 function landing() {
   const demo = window.__INFRALENS_DEMO__ ? `<button class="big alt" id="btnDemo">Load sample estate</button>` : '';
-  return `<div id="landing"><h2>Read your Terraform repository</h2>
+  const warn = S.estateEmpty ? `<div class="box" style="margin-bottom:14px"><h3 class="err">estate.js is empty</h3><p class="sub" style="margin:0">The last sync wrote <code>estate.js</code> but found no files under <code>repos\\</code>. Check the "Dashboard data" lines printed by <code>sync.cmd</code> and that the clones are in <code>repos\\&lt;name&gt;</code> next to <code>index.html</code>.</p></div>` : '';
+  return `<div id="landing">${warn}<h2>Read your Terraform repository</h2>
   <p>Pick the folder of a Terraform repo — <code>.tf</code>, <code>.tfvars</code>, JSON and YAML in any layout. The Terraform is evaluated here in the browser (variables, locals, <code>for_each</code>, <code>jsondecode(file(…))</code>, local modules) and every GCP resource, module input and config file is mapped into the dashboard. Nothing is uploaded, no server runs, nothing is written back.</p>
   <button class="big" id="btnLanding">Open repo folder</button>${demo}
   <ol><li>Put your repository URLs in <code>repos.txt</code> next to this file (copy <code>repos.example.txt</code>), one per line.</li><li>Run <code>sync.cmd</code> (or <code>./sync.sh</code> in Git Bash). It clones or pulls every repository into <code>repos\\</code> and writes <code>estate.js</code> next to this page.</li><li>Refresh this page. The estate loads by itself, after every restart, until the next sync replaces it.</li><li>Or open any folder here by hand. Check <b>Source files</b> and <b>Terraform objects</b> for anything that was read but not mapped.</li></ol></div>`;
@@ -488,7 +490,8 @@ function renderOverview(v) {
   const m = S.model; const sev = { high: 0, med: 0, low: 0 }; S.findings.forEach(f => sev[f.severity]++);
   const stat = (label, n, section) => `<div class="stat" data-go="${section}"><b>${n}</b><small>${label}</small></div>`;
   const sync = syncStatus();
-  let html = `<h2>Estate overview</h2><p class="sub">${esc(m.meta.org_domain || '')}${m.meta.org_id ? ' · org ' + esc(m.meta.org_id) : ''} · ${S.files.length} files read · adapter <code>${esc(window.InfraLensAdapter.name)}</code> · ${S.restored ? 'saved copy from' : 'scanned'} ${esc(fmtTime(S.scannedAt))}${sync ? ` · <a href="#" data-go="repos">synced ${esc(sync.when)}${sync.failed ? `, <span class="err">${sync.failed} failed</span>` : ''}</a>` : ''}${m.meta.roots ? ' · root modules: ' + m.meta.roots.map(r => `<code>${esc(r)}</code>`).join(' ') : ''}</p>`;
+  const repoDirs = S.fromEstate ? [...new Set(S.files.filter(f => f.path.includes('/')).map(f => f.path.split('/')[0]))] : [];
+  let html = `<h2>Estate overview</h2>${S.fromEstate ? `<p class="sub">From <code>estate.js</code>: ${S.files.length} files in ${repoDirs.length} repository folder${repoDirs.length === 1 ? '' : 's'} under <code>repos\\</code>: ${repoDirs.map(d => `<code>${esc(d)}</code>`).join(' ') || '<span class="err">none</span>'}</p>` : ''}<p class="sub">${esc(m.meta.org_domain || '')}${m.meta.org_id ? ' · org ' + esc(m.meta.org_id) : ''} · ${S.files.length} files read · adapter <code>${esc(window.InfraLensAdapter.name)}</code> · ${S.restored ? 'saved copy from' : 'scanned'} ${esc(fmtTime(S.scannedAt))}${sync ? ` · <a href="#" data-go="repos">synced ${esc(sync.when)}${sync.failed ? `, <span class="err">${sync.failed} failed</span>` : ''}</a>` : ''}${m.meta.roots ? ' · root modules: ' + m.meta.roots.map(r => `<code>${esc(r)}</code>`).join(' ') : ''}</p>`;
   html += `<div class="stats">${stat('Projects', m.projects.length, 'projects')}${stat('VPC networks', m.networks.length, 'networks')}${stat('Subnets', m.subnets.length, 'subnets')}${stat('Firewall rules', m.firewall_rules.length, 'firewall_rules')}${stat('IAM bindings', m.iam_bindings.length, 'iam_bindings')}${stat('Service accounts', m.service_accounts.length, 'service_accounts')}${stat('WIF providers', m.wif_providers.length, 'wif')}${stat('VPC-SC perimeters', m.vpc_sc_perimeters.length, 'vpc_sc')}${stat('Org policies', m.org_policies.length, 'org_policies')}</div>`;
   html += `<div class="cols"><div class="box"><h3>Resource hierarchy</h3>${renderTree()}</div>
   <div class="box"><h3>Findings <span class="chip high">${sev.high} high</span><span class="chip med">${sev.med} medium</span><span class="chip low">${sev.low} low</span></h3>${S.findings.slice(0, 12).map(findingRow).join('') || '<div class="muted">No findings.</div>'}${S.findings.length > 12 ? `<div style="margin-top:8px"><a href="#" data-go="findings">All ${S.findings.length} findings</a></div>` : ''}</div></div>`;
