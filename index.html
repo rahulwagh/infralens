@@ -156,6 +156,10 @@
 <script src="adapters/default.js"></script>
 <script src="adapters/gcloud.js"></script>
 <script src="adapters/terraform.js"></script>
+<!-- estate.js is written by sync.cmd / sync.sh next to this file and holds every file
+     of the workspace. Missing until the first sync; the page then falls back to the
+     folder picker and the saved copy. -->
+<script src="estate.js"></script>
 <script>
 (function () {
 'use strict';
@@ -283,6 +287,7 @@ async function openWithPicker() {
 // Chrome/Edge because the folder handle is kept in IndexedDB). Falls back to the
 // picker when no handle is available.
 async function rescan() {
+  if (S.fromEstate && !S.handle) { location.reload(); return; }
   const h = S.handle;
   if (h && h.requestPermission) {
     try {
@@ -346,13 +351,26 @@ async function forgetSaved() {
 const fmtTime = (iso) => { if (!iso) return ''; const d = new Date(iso); return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); };
 function renderStatus() {
   if (!S.model) return;
-  $('#repoName').textContent = `${S.name} · ${window.InfraLensAdapter.name} · ${S.restored ? 'saved copy from' : 'scanned'} ${fmtTime(S.scannedAt)}`;
+  $('#repoName').textContent = `${S.name} · ${window.InfraLensAdapter.name} · ${S.fromEstate ? 'from sync at' : S.restored ? 'saved copy from' : 'scanned'} ${fmtTime(S.scannedAt)}`;
   $('#btnRescan').disabled = false;
-  $('#btnRescan').title = S.handle ? 'Re-read ' + S.name + ' from disk (after git pull)' : 'Pick the folder again to re-read it';
+  $('#btnRescan').textContent = S.fromEstate ? 'Reload' : 'Re-scan';
+  $('#btnRescan').title = S.fromEstate ? 'Reload estate.js written by the last sync' : S.handle ? 'Re-read ' + S.name + ' from disk (after git pull)' : 'Pick the folder again to re-read it';
+}
+// On startup: estate.js from the last sync wins unless a saved copy is newer.
+async function boot() {
+  const est = window.__INFRALENS_ESTATE__;
+  const saved = est ? await kvGet('repo') : null;
+  if (est && est.files && !(saved && saved.scannedAt && est.generated_at && new Date(saved.scannedAt) > new Date(est.generated_at))) {
+    S.handle = (await kvGet('handle')) || null;
+    load(est.name || 'workspace', est.files.map(f => ({ path: f.path, text: f.text })), { scannedAt: est.generated_at, estate: true });
+    return;
+  }
+  restore();
 }
 function load(name, files, opts) {
   opts = opts || {};
-  S.name = name; S.scannedAt = opts.scannedAt || new Date().toISOString(); S.restored = !!opts.restored;
+  S.name = name; S.scannedAt = opts.scannedAt || new Date().toISOString(); S.restored = !!opts.restored; S.fromEstate = !!opts.estate;
+  for (const f of files) { if (!f.name) f.name = f.path.split('/').pop(); if (!f.ext) f.ext = f.name.split('.').pop().toLowerCase(); }
   for (const f of files) { if (f.ext === 'json') { try { f.json = JSON.parse(f.text); } catch (e) { f.parseError = e.message; } } }
   S.files = files.sort((a, b) => a.path.localeCompare(b.path));
   const adapters = window.InfraLensAdapters || [];
@@ -461,7 +479,7 @@ function landing() {
   return `<div id="landing"><h2>Read your Terraform repository</h2>
   <p>Pick the folder of a Terraform repo — <code>.tf</code>, <code>.tfvars</code>, JSON and YAML in any layout. The Terraform is evaluated here in the browser (variables, locals, <code>for_each</code>, <code>jsondecode(file(…))</code>, local modules) and every GCP resource, module input and config file is mapped into the dashboard. Nothing is uploaded, no server runs, nothing is written back.</p>
   <button class="big" id="btnLanding">Open repo folder</button>${demo}
-  <ol><li>Clone or pull the repo on this machine — or let <code>sync.cmd</code> do it: it clones and pulls every repository listed on the <b>Repositories</b> page into one workspace folder.</li><li>Open that folder here (several repos under one parent folder are fine). <code>.git</code>, <code>.terraform</code> and <code>node_modules</code> are skipped.</li><li>The files are kept in this browser, so a refresh shows the same dashboard. After a pull or sync, click <b>Re-scan</b>.</li><li>Check <b>Source files</b> and <b>Terraform objects</b> for anything that was read but not mapped.</li></ol></div>`;
+  <ol><li>Easiest: run <code>sync.cmd</code> (or <code>sync.sh</code> in Git Bash). It clones or pulls every repository listed in <code>repos.txt</code>, writes the estate next to this page, and opens it — nothing to pick.</li><li>Or open a folder here: one repo, or a parent folder holding several. <code>.git</code>, <code>.terraform</code> and <code>node_modules</code> are skipped. The files are kept in this browser, so a refresh shows the same dashboard; after a pull, click <b>Re-scan</b>.</li><li>Check <b>Source files</b> and <b>Terraform objects</b> for anything that was read but not mapped.</li></ol></div>`;
 }
 function loadDemo() { const d = window.__INFRALENS_DEMO__; load(d.name, d.files.map(f => ({ ...f }))); }
 
@@ -610,7 +628,7 @@ function renderRepos(v) {
   <div class="box"><h3>Daily sync</h3><ol style="margin:0;padding-left:18px">
   <li>Run <code>sync.cmd</code> from the InfraLens folder (double-click, or a desktop shortcut). It reads <code>repos.txt</code> in <code>%USERPROFILE%\\infralens-workspace</code> — pass another workspace path as the first argument if you keep the repos elsewhere.</li>
   <li>Each repository is cloned the first time and pulled (<code>--ff-only</code>) after that, with your own git credentials: Git Credential Manager asks once and remembers. Your corporate proxy settings for git apply. InfraLens never sees credentials.</li>
-  <li>When it finishes it opens this dashboard. Click <b>Re-scan</b> in the header to read the updated repositories.</li></ol>
+  <li>It then writes every file of the workspace into <code>estate.js</code> next to <code>index.html</code> and opens this dashboard, which loads that file by itself. After later syncs, press <b>F5</b> (or <b>Reload</b> in the header).</li></ol>
   <p class="sub" style="margin-bottom:0">A browser page cannot run git itself, which is why the pull step is a script. <code>sync.sh</code> is the same script for Git Bash.</p></div></div>`;
   wire(v);
   $('#btnDlRepos').onclick = () => download('repos.txt', $('#reposEdit').value);
@@ -620,6 +638,9 @@ async function saveRepos(text) {
   if (!text.endsWith('\n')) text += '\n';
   const msg = $('#reposMsg');
   let wrote = false;
+  if (!S.handle && window.showDirectoryPicker && confirm('Pick the workspace folder so repos.txt can be written there directly? (Cancel = download the file instead)')) {
+    try { S.handle = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch (e) { /* cancelled */ }
+  }
   if (S.handle && S.handle.getFileHandle) {
     try {
       let perm = await S.handle.queryPermission({ mode: 'readwrite' });
@@ -700,7 +721,7 @@ $('#search').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.ta
 document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== $('#search') && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $('#search').focus(); } });
 
 renderNav(); renderView();
-if (!window.__INFRALENS_DEMO__) restore();
+if (!window.__INFRALENS_DEMO__) boot();
 })();
 </script>
 </body>

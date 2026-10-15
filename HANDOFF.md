@@ -115,3 +115,7 @@ lists, per-tfvars variants, remote-module folder, then the earlier roadmap items
   write `sync-status.json`, open the dashboard) and a **Repositories** page (edit +
   save the list, see last sync per repo). Tested on macOS with local bare repos and
   Playwright; `sync.cmd` itself still needs its first Windows run.
+- Then: `sync.cmd` is blocked by org policy, `sync.sh` in Git Bash runs. Rahul
+  found picking the workspace folder after a sync an extra step, so sync now also
+  writes `estate.js` next to `index.html` and the page loads it on open (F5 after
+  later syncs). The folder picker and saved copy remain as the manual path.

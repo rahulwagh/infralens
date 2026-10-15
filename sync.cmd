@@ -100,7 +100,22 @@ set "WSJ=%WS:\=/%"
 > "%STATUS%" echo {"tool":"sync.cmd","synced_at":"%DATE% %TIME%","workspace":"%WSJ%","ok":%OK%,"failed":%FAIL%,"repos":[!JSON!]}
 echo.
 echo Done: %OK% ok, %FAIL% failed ^(%N% listed^). Details in "%LOG%".
-echo Now open the workspace folder in InfraLens and click Re-scan.
+
+rem Build estate.js (all workspace files for index.html) with the bash that ships
+rem with Git for Windows. Batch itself cannot encode files safely.
+set "BASH="
+for /f "delims=" %%G in ('where git 2^>nul') do if not defined BASH (
+  set "GITEXE=%%G"
+  set "BASH=!GITEXE:\cmd\git.exe=\bin\bash.exe!"
+  set "BASH=!BASH:\mingw64\bin\git.exe=\bin\bash.exe!"
+  set "BASH=!BASH:\bin\git.exe=\bin\bash.exe!"
+)
+if defined BASH if exist "!BASH!" (
+  "!BASH!" "%HERE%sync.sh" --build-only "%WS%"
+) else (
+  echo Could not find Git's bash.exe to build estate.js. Open index.html and use Open folder on "%WS%".
+)
+echo Open index.html ^(opening now^) - the estate loads by itself. Press F5 after the next sync.
 if not defined NOOPEN start "" "%HERE%index.html"
 endlocal
 exit /b 0

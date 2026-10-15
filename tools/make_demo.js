@@ -33,7 +33,7 @@ const demo = { name: path.basename(folder), files: readTree(folder) };
 const safe = (s) => s.replace(/<\/script/gi, '<\\/script');
 // Function replacement: a string replacement would interpret "$&" / "$'" inside the
 // adapter code as back-references and corrupt it.
-const result = html.replace(/<script src="adapters\/[^"]+"><\/script>\s*/g, '').replace('<script>\n(function () {',
+const result = html.replace(/<script src="(adapters\/[^"]+|estate\.js)"><\/script>\s*/g, '').replace(/<!-- estate\.js[\s\S]*?-->\s*/, '').replace('<script>\n(function () {',
   () => `<script>${safe(adapter)}</script>\n<script>window.__INFRALENS_DEMO__ = ${safe(JSON.stringify(demo))};</script>\n<script>\n(function () {`);
 fs.writeFileSync(out, result);
 console.log(`wrote ${out} (${(result.length / 1024).toFixed(0)} KB, ${demo.files.length} files inlined)`);

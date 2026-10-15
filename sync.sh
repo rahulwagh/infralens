@@ -4,13 +4,44 @@
 # sync-status.json, so the dashboard shows the result either way.
 #
 #   ./sync.sh [workspace] [--no-open]      default workspace: ~/infralens-workspace
+#
+# After pulling, every file of the workspace is written into estate.js next to
+# index.html, so opening index.html shows the estate with no folder picking.
+#   ./sync.sh --build-only [workspace]     only rebuild estate.js (no git)
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
-WS=""; NOOPEN=""
-for a in "$@"; do if [ "$a" = "--no-open" ]; then NOOPEN=1; else WS="$a"; fi; done
+WS=""; NOOPEN=""; BUILDONLY=""
+for a in "$@"; do case "$a" in --no-open) NOOPEN=1 ;; --build-only) BUILDONLY=1 ;; *) WS="$a" ;; esac; done
 WS="${WS:-$HOME/infralens-workspace}"
+command -v cygpath >/dev/null 2>&1 && WS="$(cygpath -u "$WS")"   # Git Bash: accept C:\... paths
 mkdir -p "$WS"
-REPOS="$WS/repos.txt"; STATUS="$WS/sync-status.json"; LOG="$WS/sync.log"
+REPOS="$WS/repos.txt"; STATUS="$WS/sync-status.json"; LOG="$WS/sync.log"; ESTATE="$HERE/estate.js"
+
+# Write estate.js: { name, generated_at, workspace, files: [{path, text}] }.
+# Pure awk so it runs anywhere Git Bash runs. .git, .terraform, node_modules skipped.
+build_estate() {
+  LIST="$(mktemp 2>/dev/null || echo "$WS/.infralens-files.tmp")"
+  ( cd "$WS" && find . \( -name .git -o -name node_modules -o -name .terraform \) -prune -o -type f \( -name '*.tf' -o -name '*.tfvars' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.hcl' -o -name '*.md' -o -name '*.txt' \) -print | sed 's|^\./||' | sort ) > "$LIST"
+  awk -v name="$(basename "$WS")" -v when="$(date '+%Y-%m-%dT%H:%M:%S')" -v ws="$WS" -v list="$LIST" '
+    function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/\t/, "\\t", s); gsub(/\r/, "\\r", s); gsub(/[\001-\010\013\014\016-\037]/, "", s); return s }
+    BEGIN {
+      printf "window.__INFRALENS_ESTATE__ = {\"name\":\"%s\",\"generated_at\":\"%s\",\"workspace\":\"%s\",\"files\":[", esc(name), when, esc(ws)
+      n = 0
+      while ((getline p < list) > 0) {
+        f = ws "/" p; text = ""; first = 1
+        while ((getline line < f) > 0) { text = text (first ? "" : "\\n") esc(line); first = 0 }
+        close(f)
+        printf "%s{\"path\":\"%s\",\"text\":\"%s\"}", (n ? "," : ""), esc(p), text
+        n++
+      }
+      print "]};"
+      printf "%d", n > "/dev/stderr"
+    }' > "$ESTATE" 2> "$LIST.n"
+  N_FILES="$(cat "$LIST.n" 2>/dev/null)"; rm -f "$LIST" "$LIST.n"
+  echo "Dashboard data: $N_FILES files from $WS written to $ESTATE"
+}
+
+if [ -n "$BUILDONLY" ]; then build_estate; exit 0; fi
 command -v git >/dev/null 2>&1 || { echo "git was not found on PATH."; exit 1; }
 if [ ! -f "$REPOS" ]; then
   cat > "$REPOS" <<'T'
@@ -53,7 +84,8 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$REPOS"
 printf '{"tool":"sync.sh","synced_at":"%s","workspace":"%s","ok":%d,"failed":%d,"repos":[%s]}\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$WS" "$OK" "$FAIL" "$JSON" > "$STATUS"
 echo; echo "Done: $OK ok, $FAIL failed ($N listed). Details in $LOG"
-echo "Now open the workspace folder in InfraLens and click Re-scan."
+build_estate
+echo "Open index.html (opening now) - the estate loads by itself. Press F5 after the next sync."
 if [ -z "$NOOPEN" ]; then
   case "$(uname -s)" in Darwin) open "$HERE/index.html" ;; MINGW*|MSYS*|CYGWIN*) start "" "$HERE/index.html" ;; *) xdg-open "$HERE/index.html" 2>/dev/null ;; esac
 fi

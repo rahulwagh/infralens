@@ -20,9 +20,9 @@ independently.
    file plus the module's `variables.tf` if allowed. Claude adds the spellings to
    `adapters/terraform.js` and a matching case to `sample-terraform/`.
 4. Put the Bitbucket URLs of all 8–10 repos on the **Repositories** page (or in
-   `%USERPROFILE%\infralens-workspace\repos.txt`), run `sync.cmd`, open the
-   workspace folder in the dashboard. Daily: `sync.cmd`, then **Re-scan**. Report
-   anything in `sync.log` that fails on the first Windows run.
+   `%USERPROFILE%\infralens-workspace\repos.txt`), run `./sync.sh` from Git Bash
+   (`sync.cmd` is blocked by policy). The dashboard opens with the estate loaded.
+   Daily: sync, then F5. Report anything in `sync.log` that fails.
 5. Write down which findings are noise for your policy and which checks are missing.
    Those go into `FINDINGS`.
 

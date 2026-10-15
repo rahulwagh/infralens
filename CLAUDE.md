@@ -62,6 +62,13 @@ files (.tf/.tfvars/JSON/YAML text)  →  adapter (adapters/*.js)  →  canonical
   fallback). `repos.txt` / `sync-status.json` are `INFRALENS_FILES`, never estate
   data; the terraform adapter skips `sync-status.json`. Files carry `mtime`
   (`File.lastModified`) so the page can show when the last sync ran.
+- Zero-click load: sync writes `estate.js` (`window.__INFRALENS_ESTATE__ = {name,
+  generated_at, workspace, files:[{path,text}]}`) next to index.html; `<script
+  src="estate.js">` is included (404 is harmless) and `boot()` loads it unless the
+  IndexedDB saved copy is newer. In that mode the header button is **Reload**
+  (page reload). `build_estate()` in sync.sh is a single awk program; sync.cmd
+  delegates to Git's bash.exe for it. `estate.js` is gitignored; make_demo strips
+  the include.
 - Persistence: `index.html` keeps the last opened files (and the directory handle in
   Chrome/Edge) in IndexedDB (`infralens` / `kv`), restores on startup, and the
   **Re-scan** button re-reads the same folder. Last section is in localStorage.
@@ -97,8 +104,11 @@ files (.tf/.tfvars/JSON/YAML text)  →  adapter (adapters/*.js)  →  canonical
 
 ## Current state (2026-10-15, later)
 - Added multi-repo sync: `sync.cmd`/`sync.sh`, Repositories page, sync status on
-  the overview. Untested on Windows itself (no Windows here) — first run on the
-  office laptop is the test; `sync.log` has the git output.
+  the overview, and `estate.js` auto-load so sync → open page needs no clicks.
+  `sync.cmd` is blocked by policy on Rahul's laptop; `sync.sh` from Git Bash works
+  there (he made local edits to sync.cmd, so expect a stash/conflict on pull).
+  Round trip of estate.js verified byte-exact on 24 files; autoload, Reload,
+  precedence vs saved copy and the no-estate fallback verified with Playwright.
 - Generic Terraform reader (`hcl.js` + `terraform.js`), saved copy + re-scan,
   Terraform objects view, line-based source snippets: done, tested on
   `sample-terraform/` (synthetic: direct resources, for_each over
