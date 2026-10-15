@@ -119,3 +119,8 @@ lists, per-tfvars variants, remote-module folder, then the earlier roadmap items
   found picking the workspace folder after a sync an extra step, so sync now also
   writes `estate.js` next to `index.html` and the page loads it on open (F5 after
   later syncs). The folder picker and saved copy remain as the manual path.
+- Evening: Rahul (running index.html from IntelliJ's server on localhost:63342)
+  asked for the sync to be simple: a list file in the repo, clones next to
+  `sync.cmd`, the page reads them automatically, survives restarts. Rebuilt as the
+  single-folder layout: `repos.txt` → `sync.cmd` → `repos\` + `estate.js` →
+  refresh the page. No workspace argument, no Open folder, no Re-scan needed.

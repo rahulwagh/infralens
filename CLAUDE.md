@@ -54,21 +54,23 @@ files (.tf/.tfvars/JSON/YAML text)  →  adapter (adapters/*.js)  →  canonical
   - `adapters/default.js` — the hand-made JSON layout in `sample-infra-config/`.
   - `adapters/gcloud.js` — output of `tools/export-gcloud.ps1` / `export_gcloud.py`
     (actual state). Untested against a real estate; parked until gcloud is available.
-- Multi-repo: a workspace folder with one sub-folder per repo is scanned as one
-  estate (every dir with .tf = root module). `sync.cmd` / `sync.sh` clone or pull
-  the repos listed in `<workspace>/repos.txt` and write `sync-status.json`; the
-  **Repositories** section (`renderRepos`) shows list + status and edits
-  `repos.txt` (File System Access `readwrite` on the folder handle, download
-  fallback). `repos.txt` / `sync-status.json` are `INFRALENS_FILES`, never estate
-  data; the terraform adapter skips `sync-status.json`. Files carry `mtime`
-  (`File.lastModified`) so the page can show when the last sync ran.
-- Zero-click load: sync writes `estate.js` (`window.__INFRALENS_ESTATE__ = {name,
-  generated_at, workspace, files:[{path,text}]}`) next to index.html; `<script
-  src="estate.js">` is included (404 is harmless) and `boot()` loads it unless the
-  IndexedDB saved copy is newer. In that mode the header button is **Reload**
-  (page reload). `build_estate()` in sync.sh is a single awk program; sync.cmd
-  delegates to Git's bash.exe for it. `estate.js` is gitignored; make_demo strips
-  the include.
+- Multi-repo sync, single-folder layout (Rahul asked for this explicitly on
+  2026-10-15 — keep it simple, no workspace argument): `repos.txt` next to
+  `sync.cmd` lists URLs; `sync.cmd`/`sync.sh` clone or pull into `repos/<name>/`,
+  write `sync-status.json`, `sync.log` and `estate.js`, all gitignored.
+  `estate.js` = `window.__INFRALENS_ESTATE__ = {name, generated_at, workspace,
+  files:[{path,text}]}` with paths relative to `repos/` plus `repos.txt` and
+  `sync-status.json` at the root; built by one awk program in `sync.sh`
+  (`--build-only`), `sync.cmd` calls Git's `bash.exe` for it and falls back to an
+  inline PowerShell command. `index.html` includes `estate.js` (404 harmless) and
+  `boot()` loads it unless the IndexedDB saved copy is newer; header button is
+  **Reload** in that mode. Rahul serves index.html from IntelliJ's built-in server
+  (localhost:63342) — relative `estate.js` works there too. The **Repositories**
+  section (`renderRepos`) shows list + status and can write `repos.txt` via the File
+  System Access API (asks for the InfraLens folder), download fallback.
+  `repos.txt` / `sync-status.json` are `INFRALENS_FILES`, never estate data; the
+  terraform adapter skips `sync-status.json`. Files carry `mtime` when read from a
+  folder.
 - Persistence: `index.html` keeps the last opened files (and the directory handle in
   Chrome/Edge) in IndexedDB (`infralens` / `kv`), restores on startup, and the
   **Re-scan** button re-reads the same folder. Last section is in localStorage.
@@ -102,7 +104,14 @@ files (.tf/.tfvars/JSON/YAML text)  →  adapter (adapters/*.js)  →  canonical
   findings. Light theme by default, dark follows OS. Prose and labels in sentence
   case. No decorative motion.
 
-## Current state (2026-10-15, later)
+## Current state (2026-10-15, evening)
+- Simplified to the single-folder layout above after Rahul found the workspace /
+  Open folder / Re-scan flow too complicated. Tested here: sync.sh clone + pull
+  against local bare repos into `repos/`, byte-exact estate.js, autoload over
+  file:// and over http://localhost (IntelliJ-like) with Playwright. `sync.cmd`
+  still untested on Windows (its PowerShell fallback especially).
+
+## Earlier state (2026-10-15, later)
 - Added multi-repo sync: `sync.cmd`/`sync.sh`, Repositories page, sync status on
   the overview, and `estate.js` auto-load so sync → open page needs no clicks.
   `sync.cmd` is blocked by policy on Rahul's laptop; `sync.sh` from Git Bash works

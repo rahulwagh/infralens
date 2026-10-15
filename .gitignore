@@ -1,4 +1,9 @@
 demo.html
-model.json
 demo-*.html
+model.json
+# written by sync.cmd / sync.sh - local to this machine
+repos.txt
+/repos/
 estate.js
+sync-status.json
+sync.log

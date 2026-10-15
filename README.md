@@ -29,8 +29,8 @@ Point it at the folder of your Terraform repo and get:
 3. Open `index.html` in Edge or Chrome (Firefox works, with a slightly older folder
    picker). Click **Open repo folder**, pick the Terraform checkout.
 4. Everything is parsed in the browser. Nothing is uploaded, nothing is written.
-5. Or skip steps 2–3 entirely: run `sync.cmd` / `sync.sh` (see below) and the
-   dashboard opens with the estate already loaded.
+5. Or skip steps 2–3 entirely: list the repos in `repos.txt`, run `sync.cmd` (see
+   below) and refresh the page; the estate is loaded by itself.
 6. The files you opened are kept in the browser's IndexedDB, so a refresh or a new
    browser session shows the same dashboard. After `git pull`, click **Re-scan**
    (Edge/Chrome re-read the folder without asking again; Firefox shows the picker).
@@ -41,44 +41,42 @@ Point it at the folder of your Terraform repo and get:
 
 ## Several repositories, one estate, synced daily
 
-Most estates are spread over 8–10 repos. InfraLens treats a **workspace folder**
-with one sub-folder per repo as a single estate: every directory with `.tf` files
-is a root module, ids are built from GCP project ids so entities from different
-repos link up, and file paths are prefixed with the repo name.
-
-`sync.cmd` keeps that folder up to date:
+Everything lives in the InfraLens folder:
 
 ```
-sync.cmd                         workspace = %USERPROFILE%\infralens-workspace
-sync.cmd C:\path\to\workspace     any other folder
+infralens\
+  repos.txt          the repositories to clone, one URL per line   (you write this)
+  sync.cmd           clone or pull them all, then write estate.js   (you run this)
+  repos\<name>\      the clones                                     (written by sync)
+  estate.js          every file of repos\, loaded by index.html     (written by sync)
+  sync-status.json   result per repository                          (written by sync)
+  index.html         the dashboard
 ```
 
-- Reads `repos.txt` in the workspace (one URL per line, optional second word =
-  folder name). The first run creates the file and opens it.
-- Clones each repo the first time, `git pull --ff-only` after that. Failures are
-  reported and the run continues.
-- Uses your own git setup: Git Credential Manager asks for Bitbucket credentials
-  once (use an HTTP access token as the password) and remembers them; your
-  `http.proxy` applies. InfraLens never sees credentials.
-- Writes `sync-status.json` and `sync.log` into the workspace.
-- Writes **`estate.js`** next to `index.html`: every file of the workspace, JSON
-  encoded (pure awk, so it works in Git Bash). `index.html` loads it on open — no
-  folder picking, no Re-scan. After the next sync, press F5. `estate.js` is
-  gitignored and stays on the laptop.
-- Opens the dashboard.
+1. Copy `repos.example.txt` to `repos.txt` and add your Bitbucket URLs. An
+   optional second word on a line sets the folder name.
+2. Run `sync.cmd` (double-click, or `./sync.sh` from Git Bash when batch files
+   are blocked). Each repository is cloned the first time and `git pull --ff-only`ed
+   after that, with your own git credentials and proxy: Git Credential Manager asks
+   once (use a Bitbucket HTTP access token as the password) and remembers. Failures
+   are reported and the run continues. `sync.log` has the git output.
+3. Open `index.html`, or refresh it if it is open — from disk or from a local
+   server such as IntelliJ's (`http://localhost:63342/...`). It loads `estate.js`
+   by itself. That is a file on disk, so it is there after every restart until the
+   next sync replaces it.
 
-`sync.cmd` runs the git steps in batch and calls Git's own `bash.exe` for the
-`estate.js` step. If batch files are blocked by policy, run `./sync.sh` from Git
-Bash instead; it is the same script.
+The **Repositories** page shows the last sync per repository (branch, commit, date,
+message) and lets you edit the list. All generated files and `repos.txt` are
+gitignored, so your internal URLs never go to GitHub and `git pull` on InfraLens
+itself never conflicts with them.
 
-The **Repositories** page in the dashboard shows the list and the last sync result
-per repo (branch, commit, date, message), and lets you edit the list. **Save**
-writes `repos.txt` into the workspace folder directly in Edge/Chrome (it asks for
-write access to that folder once); elsewhere it downloads the file for you to drop
-in. `sync.sh` is the same script for Git Bash / macOS.
+Every directory with `.tf` files under `repos\` is a root module; ids are built from
+GCP project ids, so entities from different repositories link up. `estate.js` is
+written by one awk program (Git Bash has awk); `sync.cmd` calls Git's `bash.exe`
+for that step and falls back to PowerShell.
 
-A browser page cannot run git, which is why the pull step is a script rather than
-a button. Everything else — list, status, dashboard — lives in the page.
+The folder picker (**Open folder**) still works for looking at any folder by hand;
+those files are then kept in the browser and **Re-scan** re-reads the folder.
 
 ## How a Terraform repo is read
 
@@ -137,8 +135,9 @@ under **Terraform objects** but not in their own section. Two ways to fix that:
 
 ```
 index.html              the whole dashboard (open this)
-sync.cmd / sync.sh      clone or pull every repo in <workspace>/repos.txt, write sync-status.json + estate.js
-estate.js               generated by sync: the workspace files, auto-loaded by index.html (gitignored)
+repos.txt               your repository URLs (gitignored; start from repos.example.txt)
+sync.cmd / sync.sh      clone or pull every repo in repos.txt into repos/, write estate.js + sync-status.json
+repos/, estate.js       generated by sync (gitignored); index.html loads estate.js on open
 adapters/hcl.js         HCL2 reader + Terraform expression evaluator
 adapters/terraform.js   generic Terraform repo  →  canonical model
 adapters/default.js     the sample-infra-config JSON layout  →  canonical model

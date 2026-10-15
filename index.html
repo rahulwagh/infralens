@@ -362,7 +362,7 @@ async function boot() {
   const saved = est ? await kvGet('repo') : null;
   if (est && est.files && !(saved && saved.scannedAt && est.generated_at && new Date(saved.scannedAt) > new Date(est.generated_at))) {
     S.handle = (await kvGet('handle')) || null;
-    load(est.name || 'workspace', est.files.map(f => ({ path: f.path, text: f.text })), { scannedAt: est.generated_at, estate: true });
+    load(est.name || 'repos', est.files.map(f => ({ path: f.path, text: f.text })), { scannedAt: est.generated_at, estate: true });
     return;
   }
   restore();
@@ -479,7 +479,7 @@ function landing() {
   return `<div id="landing"><h2>Read your Terraform repository</h2>
   <p>Pick the folder of a Terraform repo — <code>.tf</code>, <code>.tfvars</code>, JSON and YAML in any layout. The Terraform is evaluated here in the browser (variables, locals, <code>for_each</code>, <code>jsondecode(file(…))</code>, local modules) and every GCP resource, module input and config file is mapped into the dashboard. Nothing is uploaded, no server runs, nothing is written back.</p>
   <button class="big" id="btnLanding">Open repo folder</button>${demo}
-  <ol><li>Easiest: run <code>sync.cmd</code> (or <code>sync.sh</code> in Git Bash). It clones or pulls every repository listed in <code>repos.txt</code>, writes the estate next to this page, and opens it — nothing to pick.</li><li>Or open a folder here: one repo, or a parent folder holding several. <code>.git</code>, <code>.terraform</code> and <code>node_modules</code> are skipped. The files are kept in this browser, so a refresh shows the same dashboard; after a pull, click <b>Re-scan</b>.</li><li>Check <b>Source files</b> and <b>Terraform objects</b> for anything that was read but not mapped.</li></ol></div>`;
+  <ol><li>Put your repository URLs in <code>repos.txt</code> next to this file (copy <code>repos.example.txt</code>), one per line.</li><li>Run <code>sync.cmd</code> (or <code>./sync.sh</code> in Git Bash). It clones or pulls every repository into <code>repos\\</code> and writes <code>estate.js</code> next to this page.</li><li>Refresh this page. The estate loads by itself, after every restart, until the next sync replaces it.</li><li>Or open any folder here by hand. Check <b>Source files</b> and <b>Terraform objects</b> for anything that was read but not mapped.</li></ol></div>`;
 }
 function loadDemo() { const d = window.__INFRALENS_DEMO__; load(d.name, d.files.map(f => ({ ...f }))); }
 
@@ -619,17 +619,18 @@ function renderRepos(v) {
   const rows = list.map(r => { const st = byName.get(r.name); const onDisk = present.has(r.name);
     return `<tr><td class="mono">${esc(r.name)}</td><td class="mono">${esc(r.url)}</td><td>${st ? (st.result === 'ok' ? '<span class="chip low">ok</span>' : `<span class="chip high">${esc(st.result)}</span>`) : onDisk ? '<span class="muted">on disk</span>' : '<span class="chip med">not cloned yet</span>'}</td><td class="mono">${st ? esc((st.branch || '') + ' ' + (st.commit || '')) : ''}</td><td>${st ? esc((st.commit_date || '').slice(0, 16)) : ''}</td><td>${st ? esc(st.subject || st.message || '') : ''}</td></tr>`; });
   const stale = (sync ? sync.repos : []).filter(r => !list.some(l => l.name === r.name));
-  v.innerHTML = `<h2>Repositories</h2><p class="sub">The Bitbucket repositories that make up the estate. The list is saved as <code>repos.txt</code> in the workspace folder (<code>${esc(S.name)}</code>); <code>sync.cmd</code> clones or pulls each one into that folder and writes <code>sync-status.json</code>, which this page shows.</p>
+  v.innerHTML = `<h2>Repositories</h2><p class="sub">The Bitbucket repositories that make up the estate. The list is <code>repos.txt</code> in the InfraLens folder; <code>sync.cmd</code> clones or pulls each one into <code>repos\\</code> there, writes <code>estate.js</code> for this page and <code>sync-status.json</code>, shown below.</p>
   <div class="box" style="margin-bottom:14px"><h3>Sync status ${sync ? `<span class="chip ${sync.failed ? 'high' : 'low'}">${sync.ok} ok${sync.failed ? ', ' + sync.failed + ' failed' : ''}</span> <span class="muted">last sync ${esc(sync.when)}${sync.tool ? ' via ' + esc(sync.tool) : ''}</span>` : '<span class="chip med">never synced</span>'}</h3>
   ${list.length ? `<table><thead><tr><th>Repository</th><th>URL</th><th>Last sync</th><th>Branch · commit</th><th>Committed</th><th>Last commit / message</th></tr></thead><tbody>${rows.join('')}${stale.map(r => `<tr><td class="mono muted">${esc(r.name)}</td><td class="mono muted">${esc(r.url)}</td><td colspan="4" class="muted">synced earlier but no longer in the list — delete the folder if not needed</td></tr>`).join('')}</tbody></table>` : '<div class="muted">No repositories listed yet. Add them below and save.</div>'}</div>
   <div class="cols"><div class="box"><h3>Repository list</h3><p class="sub">One URL per line. Optional second word = folder name. Lines starting with <code>#</code> are ignored.</p>
   <textarea id="reposEdit" rows="12" spellcheck="false" style="width:100%;font:12.5px var(--code);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:var(--radius);padding:8px;resize:vertical">${esc(text || '# https://bitbucket.example.com/scm/plat/tf-landing-zone.git\n# https://bitbucket.example.com/scm/plat/tf-network.git  network\n')}</textarea>
-  <div class="toolbar"><button class="hbtn" id="btnSaveRepos">Save</button><button class="hbtn" id="btnDlRepos" title="Download repos.txt to place in the workspace folder yourself">Download</button><span class="count" id="reposMsg">${list.length} repositories</span></div></div>
+  <div class="toolbar"><button class="hbtn" id="btnSaveRepos">Save</button><button class="hbtn" id="btnDlRepos" title="Download repos.txt to place in the InfraLens folder yourself">Download</button><span class="count" id="reposMsg">${list.length} repositories</span></div>
+  <p class="sub" style="margin-bottom:0">Editing <code>repos.txt</code> in any editor works just as well. <b>Save</b> here asks once for the InfraLens folder so it can write the file there.</p></div>
   <div class="box"><h3>Daily sync</h3><ol style="margin:0;padding-left:18px">
-  <li>Run <code>sync.cmd</code> from the InfraLens folder (double-click, or a desktop shortcut). It reads <code>repos.txt</code> in <code>%USERPROFILE%\\infralens-workspace</code> — pass another workspace path as the first argument if you keep the repos elsewhere.</li>
-  <li>Each repository is cloned the first time and pulled (<code>--ff-only</code>) after that, with your own git credentials: Git Credential Manager asks once and remembers. Your corporate proxy settings for git apply. InfraLens never sees credentials.</li>
-  <li>It then writes every file of the workspace into <code>estate.js</code> next to <code>index.html</code> and opens this dashboard, which loads that file by itself. After later syncs, press <b>F5</b> (or <b>Reload</b> in the header).</li></ol>
-  <p class="sub" style="margin-bottom:0">A browser page cannot run git itself, which is why the pull step is a script. <code>sync.sh</code> is the same script for Git Bash.</p></div></div>`;
+  <li>Run <code>sync.cmd</code> in the InfraLens folder (or <code>./sync.sh</code> in Git Bash).</li>
+  <li>Each repository in <code>repos.txt</code> is cloned into <code>repos\\&lt;name&gt;</code> the first time and pulled (<code>--ff-only</code>) after that, with your own git credentials and proxy. Git Credential Manager asks once and remembers; InfraLens never sees credentials.</li>
+  <li>It writes <code>estate.js</code> next to <code>index.html</code>. Open or refresh this page (<b>F5</b>) and the estate is loaded — nothing to pick. It is a file on disk, so it is there after every restart.</li></ol>
+  <p class="sub" style="margin-bottom:0">A browser page cannot run git itself, which is why the pull step is a script.</p></div></div>`;
   wire(v);
   $('#btnDlRepos').onclick = () => download('repos.txt', $('#reposEdit').value);
   $('#btnSaveRepos').onclick = () => saveRepos($('#reposEdit').value);
@@ -638,7 +639,7 @@ async function saveRepos(text) {
   if (!text.endsWith('\n')) text += '\n';
   const msg = $('#reposMsg');
   let wrote = false;
-  if (!S.handle && window.showDirectoryPicker && confirm('Pick the workspace folder so repos.txt can be written there directly? (Cancel = download the file instead)')) {
+  if (!S.handle && window.showDirectoryPicker && confirm('Pick the InfraLens folder (the one with index.html and sync.cmd) so repos.txt can be written there. Cancel = download the file instead.')) {
     try { S.handle = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch (e) { /* cancelled */ }
   }
   if (S.handle && S.handle.getFileHandle) {
@@ -654,7 +655,7 @@ async function saveRepos(text) {
   await persist(S.name, S.files, S.handle);
   if (!wrote) download('repos.txt', text);
   renderNav(); renderView();
-  const m2 = $('#reposMsg'); if (m2) m2.textContent = wrote ? `Saved to ${S.name}/repos.txt` : `Kept in this browser; repos.txt was downloaded — put it in the workspace folder (${S.name}).`;
+  const m2 = $('#reposMsg'); if (m2) m2.textContent = wrote ? `Saved repos.txt. Run sync.cmd to clone the new repositories.` : `repos.txt was downloaded — put it in the InfraLens folder next to sync.cmd, then run sync.cmd.`;
 }
 
 // ---- global search ----
