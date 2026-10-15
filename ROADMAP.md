@@ -8,16 +8,18 @@ independently.
 
 ## Rahul — at work
 
-1. Clone this repo on the laptop. Open `index.html`, pick the real infra-config
-   folder, see what lights up.
-2. Go to **Source files** → note which files are *unused*. Those are the files the
-   default adapter does not understand yet.
-3. Adapt `adapters/default.js` (see `ADAPTER_GUIDE.md`). Commit it as
-   `adapters/<company>.js` and switch the `<script src>` in `index.html`.
-4. Produce a sanitized sample (fake ids, same shape) of 2–3 real files and
-   `variables.tf` of the module, if that is allowed. Even a hand-written description
-   of the shape helps. That becomes `sample-infra-config/` v2 and lets Claude test
-   against something realistic.
+1. `git pull` this repo on the laptop. Open `index.html`, **Open repo folder**, pick
+   the real Terraform repo. The generic reader evaluates it; no adapter work needed
+   up front.
+2. Look at **Overview → Reader notes** (what could not be resolved), **Terraform
+   objects** (everything read; `Mapped` = ✓ means it landed in a section) and
+   **Source files** (per-file status). Unmapped objects and *unused* files are the
+   gaps.
+3. For each gap, send the shape: the key names of one object (fake values are
+   fine), the module input name it is passed as, or a sanitized copy of a small
+   file plus the module's `variables.tf` if allowed. Claude adds the spellings to
+   `adapters/terraform.js` and a matching case to `sample-terraform/`.
+4. After every `git pull` of this repo or of the Terraform repo: **Re-scan**.
 5. Write down which findings are noise for your policy and which checks are missing.
    Those go into `FINDINGS`.
 
@@ -43,7 +45,14 @@ independently.
       reviews.
 - [ ] Optional `terraform show -json` adapter for declared-vs-actual drift, for
       estates where state is reachable from the laptop.
-- [ ] Minimal HCL/`.tfvars` reader for repos that are not pure JSON.
+- [x] HCL/`.tfvars` reader with Terraform evaluation (`adapters/hcl.js`), generic
+      Terraform adapter (`adapters/terraform.js`), saved copy + re-scan, Terraform
+      objects view. 2026-10-15.
+- [ ] Per-tfvars variants: evaluate a root once per `envs/*.tfvars` so prod and
+      nonprod estates both appear (today: auto-loaded tfvars only; other tfvars are
+      shape-scanned standalone).
+- [ ] Remote module source → fetch the module repo too (second folder picker) so
+      module internals are evaluated instead of shape-guessed.
 - [ ] Print/PDF stylesheet for sharing a findings report.
 - [ ] Project page: one screen per project collecting its network, rules, IAM, SAs,
       WIF, perimeter, policies.
@@ -52,6 +61,7 @@ independently.
 
 - Never commit real project ids, emails, CIDRs or org numbers to this repo.
 - The UI must stay a single file with no external resources. Vendor nothing.
+  `adapters/*.js` are the only other runtime files.
 - The adapter extracts; the UI derives. No findings logic in adapters.
 - Any change to the canonical model: update `docs/CANONICAL_MODEL.md` in the same
   commit and bump the note at the top.

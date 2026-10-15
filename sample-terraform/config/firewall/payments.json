@@ -1,0 +1,7 @@
+{
+  "project": "prj-payments-prod",
+  "rules": [
+    { "name": "allow-api-ingress", "source_ranges": ["0.0.0.0/0"], "target_service_accounts": ["sa-payments-api@prj-payments-prod.iam.gserviceaccount.com"], "allow": [{ "protocol": "tcp", "ports": ["443"] }] },
+    { "name": "allow-db", "source_ranges": ["10.10.1.0/24"], "target_tags": ["db"], "allow": [{ "protocol": "tcp", "ports": ["5432"] }] }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "org_domain": "example-bank.se",
+  "folders": {
+    "Security": { "parent": "organizations/123456789012" }
+  },
+  "projects": {
+    "prj-security-tooling": {
+      "folder": "Security",
+      "labels": { "env": "prod", "owner": "security" },
+      "services": ["securitycenter.googleapis.com", "logging.googleapis.com"],
+      "iam": { "roles/securitycenter.admin": ["group:sec-ops@example-bank.se"] },
+      "service_accounts": {
+        "sa-scc-export": { "display_name": "SCC findings export", "roles": ["roles/pubsub.publisher"] }
+      },
+      "network": {
+        "name": "vpc-sec", "routing_mode": "REGIONAL",
+        "subnets": [ { "name": "sn-sec-tools", "cidr": "10.50.0.0/24", "region": "europe-west2", "private_google_access": true, "flow_logs": true } ],
+        "firewall_rules": [ { "name": "allow-scanner", "source_ranges": ["10.50.0.0/24"], "allow": [{ "protocol": "tcp", "ports": ["0-65535"] }] } ]
+      }
+    }
+  },
+  "org_policies": [
+    { "constraint": "compute.requireOsLogin", "scope": "organizations/123456789012", "enforce": true },
+    { "constraint": "compute.requireOsLogin", "scope": "projects/prj-legacy-batch-nonprod", "enforce": false, "reason": "legacy batch hosts use local accounts" }
+  ],
+  "workload_identity": {
+    "pools": [
+      { "name": "bitbucket-pool", "project": "prj-security-tooling", "display_name": "Bitbucket pipelines",
+        "providers": [ { "name": "bitbucket-oidc", "type": "oidc", "issuer_uri": "https://api.bitbucket.org/2.0/workspaces/example-bank/pipelines-config/identity/oidc", "attribute_mapping": { "google.subject": "assertion.sub" } } ],
+        "service_account_bindings": [ { "service_account": "sa-scc-export@prj-security-tooling.iam.gserviceaccount.com", "principal_set": "attribute.workspace/example-bank" } ] }
+    ]
+  }
+}

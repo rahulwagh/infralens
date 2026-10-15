@@ -139,7 +139,8 @@
   <header>
     <h1>InfraLens <span id="repoName"></span></h1>
     <input id="search" type="search" placeholder="Search everything — project id, CIDR, SA email, role, group, constraint…" autocomplete="off" disabled>
-    <button class="hbtn" id="btnOpen" title="Open a different infra-config folder">Open folder</button>
+    <button class="hbtn" id="btnOpen" title="Open a different repo folder">Open folder</button>
+    <button class="hbtn" id="btnRescan" title="Re-read the same folder, e.g. after git pull" disabled>Re-scan</button>
     <button class="hbtn" id="btnExport" title="Download the normalized model as JSON" disabled>Export model</button>
     <button class="hbtn" id="btnTheme" title="Toggle light/dark">Theme</button>
   </header>
@@ -151,8 +152,10 @@
 </div>
 <input type="file" id="dirInput" webkitdirectory directory multiple hidden>
 
+<script src="adapters/hcl.js"></script>
 <script src="adapters/default.js"></script>
 <script src="adapters/gcloud.js"></script>
+<script src="adapters/terraform.js"></script>
 <script>
 (function () {
 'use strict';
@@ -185,6 +188,8 @@ const SECTIONS = [
   { id: 'org_policies', label: 'Org policies', group: 'Policy', kind: 'org_policies',
     cols: [['constraint','Constraint','mono'], ['scope_type','Scope'], ['scope','On','mono'], ['policy_type','Type'], ['enforce','Enforce','bool'], ['allow','Allow','list'], ['deny','Deny','list'], ['deny_all','Deny all','bool'], ['reason','Reason']] },
   { id: 'files', label: 'Source files', group: 'Repository' },
+  { id: 'other', label: 'Terraform objects', group: 'Repository', kind: 'other',
+    cols: [['kind','Kind'], ['id','Address','mono'], ['project','Project','mono'], ['summary','Name / source','mono'], ['mapped','Mapped','bool']] },
 ];
 
 /* =========================================================================
@@ -244,16 +249,13 @@ const FINDINGS = [
 /* =========================================================================
    3. STATE + LOADING
    ========================================================================= */
-const S = { files: [], model: null, index: null, findings: [], section: 'overview', selected: null, query: '', sort: {}, filters: {} };
+const S = { files: [], model: null, index: null, findings: [], section: 'overview', selected: null, query: '', sort: {}, filters: {}, handle: null, scannedAt: null, restored: false, name: '' };
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const get = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
 const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md']);
 
-async function openWithPicker() {
-  if (!window.showDirectoryPicker) { $('#dirInput').click(); return; }
-  let dir;
-  try { dir = await window.showDirectoryPicker({ mode: 'read' }); } catch (e) { return; }
+async function readHandle(dir) {
   const files = [];
   async function walk(handle, prefix) {
     for await (const [name, h] of handle.entries()) {
@@ -264,7 +266,30 @@ async function openWithPicker() {
     }
   }
   await walk(dir, '');
+  return files;
+}
+async function openWithPicker() {
+  if (!window.showDirectoryPicker) { $('#dirInput').click(); return; }
+  let dir;
+  try { dir = await window.showDirectoryPicker({ mode: 'read' }); } catch (e) { return; }
+  const files = await readHandle(dir);
+  S.handle = dir;
   load(dir.name, files);
+  persist(dir.name, files, dir);
+}
+// Re-read the folder that was opened before (works across page reloads in
+// Chrome/Edge because the folder handle is kept in IndexedDB). Falls back to the
+// picker when no handle is available.
+async function rescan() {
+  const h = S.handle;
+  if (h && h.requestPermission) {
+    try {
+      let perm = await h.queryPermission({ mode: 'read' });
+      if (perm !== 'granted') perm = await h.requestPermission({ mode: 'read' });
+      if (perm === 'granted') { const files = await readHandle(h); load(h.name, files); persist(h.name, files, h); return; }
+    } catch (e) { console.warn('re-scan via saved handle failed, falling back to picker', e); }
+  }
+  openWithPicker();
 }
 async function openFromInput(ev) {
   const list = Array.from(ev.target.files || []);
@@ -277,10 +302,55 @@ async function openFromInput(ev) {
     const ext = f.name.split('.').pop().toLowerCase();
     if (TEXT_EXT.has(ext)) files.push({ path: rel, name: f.name, ext, text: await f.text() });
   }
+  S.handle = null;
   load(root, files);
+  persist(root, files, null);
   ev.target.value = '';
 }
-function load(name, files) {
+
+/* ---- saved copy: the files read last time live in IndexedDB so a refresh (or a
+   fresh browser start) shows the same dashboard without picking the folder again.
+   Only this browser profile on this machine can read it. ---- */
+const DB_NAME = 'infralens', DB_STORE = 'kv';
+function idb() {
+  return new Promise((res, rej) => {
+    if (!window.indexedDB) return rej(new Error('IndexedDB unavailable'));
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(DB_STORE);
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); r.onblocked = () => rej(new Error('blocked'));
+  });
+}
+async function kvGet(k) { try { const db = await idb(); return await new Promise((res, rej) => { const q = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); } catch (e) { return undefined; } }
+async function kvSet(k, v) { try { const db = await idb(); await new Promise((res, rej) => { const t = db.transaction(DB_STORE, 'readwrite'); t.objectStore(DB_STORE).put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); return true; } catch (e) { console.warn('could not save', k, e); return false; } }
+async function kvDel(k) { try { const db = await idb(); await new Promise((res, rej) => { const t = db.transaction(DB_STORE, 'readwrite'); t.objectStore(DB_STORE).delete(k); t.oncomplete = res; t.onerror = () => rej(t.error); }); } catch (e) { /* ignore */ } }
+async function persist(name, files, handle) {
+  const ok = await kvSet('repo', { name, scannedAt: S.scannedAt, files: files.map(f => ({ path: f.path, name: f.name, ext: f.ext, text: f.text })) });
+  if (handle) await kvSet('handle', handle); else await kvDel('handle');
+  S.saved = ok; renderStatus();
+}
+async function restore() {
+  const saved = await kvGet('repo');
+  if (!saved || !saved.files || S.model) return;
+  S.handle = (await kvGet('handle')) || null;
+  S.saved = true;
+  load(saved.name, saved.files, { scannedAt: saved.scannedAt, restored: true });
+}
+async function forgetSaved() {
+  await kvDel('repo'); await kvDel('handle');
+  S.handle = null; S.saved = false; S.model = null; S.files = []; S.restored = false; S.name = '';
+  $('#repoName').textContent = ''; $('#search').disabled = true; $('#btnExport').disabled = true; $('#btnRescan').disabled = true;
+  go('overview');
+}
+const fmtTime = (iso) => { if (!iso) return ''; const d = new Date(iso); return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); };
+function renderStatus() {
+  if (!S.model) return;
+  $('#repoName').textContent = `${S.name} · ${window.InfraLensAdapter.name} · ${S.restored ? 'saved copy from' : 'scanned'} ${fmtTime(S.scannedAt)}`;
+  $('#btnRescan').disabled = false;
+  $('#btnRescan').title = S.handle ? 'Re-read ' + S.name + ' from disk (after git pull)' : 'Pick the folder again to re-read it';
+}
+function load(name, files, opts) {
+  opts = opts || {};
+  S.name = name; S.scannedAt = opts.scannedAt || new Date().toISOString(); S.restored = !!opts.restored;
   for (const f of files) { if (f.ext === 'json') { try { f.json = JSON.parse(f.text); } catch (e) { f.parseError = e.message; } } }
   S.files = files.sort((a, b) => a.path.localeCompare(b.path));
   const adapters = window.InfraLensAdapters || [];
@@ -291,9 +361,11 @@ function load(name, files) {
   S.index = buildIndex(S.model);
   S.findings = runFindings(S.model);
   S.selected = null; S.query = '';
-  $('#repoName').textContent = `${name} · ${adapter.name}`;
   $('#search').disabled = false; $('#search').value = ''; $('#btnExport').disabled = false;
-  go('overview');
+  renderStatus();
+  let section = 'overview';
+  if (opts.restored) { try { const s = localStorage.getItem('infralens.section'); if (s && SECTIONS.some(x => x.id === s)) section = s; } catch (e) { /* ignore */ } }
+  go(section);
 }
 
 // Fill defaults, derive WIF bindings from principalSet IAM bindings, de-dup.
@@ -319,7 +391,7 @@ function normalize(m) {
 /* =========================================================================
    4. INDEX + RELATIONSHIP GRAPH (generic: derived from id references)
    ========================================================================= */
-const KIND_LABEL = { folders: 'Folder', projects: 'Project', networks: 'Network', subnets: 'Subnet', peerings: 'Peering', firewall_rules: 'Firewall rule', iam_bindings: 'IAM binding', service_accounts: 'Service account', wif_pools: 'WIF pool', wif_providers: 'WIF provider', wif_bindings: 'WIF binding', access_levels: 'Access level', vpc_sc_perimeters: 'VPC-SC perimeter', org_policies: 'Org policy', other: 'Other' };
+const KIND_LABEL = { folders: 'Folder', projects: 'Project', networks: 'Network', subnets: 'Subnet', peerings: 'Peering', firewall_rules: 'Firewall rule', iam_bindings: 'IAM binding', service_accounts: 'Service account', wif_pools: 'WIF pool', wif_providers: 'WIF provider', wif_bindings: 'WIF binding', access_levels: 'Access level', vpc_sc_perimeters: 'VPC-SC perimeter', org_policies: 'Org policy', other: 'Terraform object' };
 function buildIndex(m) {
   const byId = new Map(); const edges = new Map(); // id -> [{to, label}]
   const add = (kind, e) => byId.set(kind + '#' + e.id, { kind, e });
@@ -362,7 +434,7 @@ const findingsFor = (kind, id) => S.findings.filter(f => f.entity_kind === kind 
 /* =========================================================================
    5. RENDERING
    ========================================================================= */
-function go(section) { S.section = section; S.selected = null; renderNav(); renderView(); renderDrawer(); }
+function go(section) { S.section = section; S.selected = null; try { localStorage.setItem('infralens.section', section); } catch (e) { /* ignore */ } renderNav(); renderView(); renderDrawer(); }
 function renderNav() {
   const nav = $('#nav'); let html = ''; let grp = '';
   const counts = {}; if (S.model) { for (const k of Object.keys(KIND_LABEL)) counts[k] = S.model[k].length; counts.findings = S.findings.length; }
@@ -384,10 +456,10 @@ function renderView() {
 }
 function landing() {
   const demo = window.__INFRALENS_DEMO__ ? `<button class="big alt" id="btnDemo">Load sample estate</button>` : '';
-  return `<div id="landing"><h2>Read your infra-config repository</h2>
-  <p>Pick the folder of the repo that holds the JSON passed to your no-code Terraform modules. Everything is parsed here in the browser — nothing is uploaded, no server runs, and nothing is written back.</p>
+  return `<div id="landing"><h2>Read your Terraform repository</h2>
+  <p>Pick the folder of a Terraform repo — <code>.tf</code>, <code>.tfvars</code>, JSON and YAML in any layout. The Terraform is evaluated here in the browser (variables, locals, <code>for_each</code>, <code>jsondecode(file(…))</code>, local modules) and every GCP resource, module input and config file is mapped into the dashboard. Nothing is uploaded, no server runs, nothing is written back.</p>
   <button class="big" id="btnLanding">Open repo folder</button>${demo}
-  <ol><li>Clone or pull the infra-config repo on this machine.</li><li>Open that folder here. <code>.git</code>, <code>.terraform</code> and <code>node_modules</code> are skipped.</li><li>If a section stays empty, the adapter does not match your file layout yet — see <code>ADAPTER_GUIDE.md</code>.</li></ol></div>`;
+  <ol><li>Clone or pull the repo on this machine.</li><li>Open that folder here. <code>.git</code>, <code>.terraform</code> and <code>node_modules</code> are skipped.</li><li>The files are kept in this browser, so a refresh shows the same dashboard. After <code>git pull</code>, click <b>Re-scan</b>.</li><li>Check <b>Source files</b> and <b>Terraform objects</b> for anything that was read but not mapped.</li></ol></div>`;
 }
 function loadDemo() { const d = window.__INFRALENS_DEMO__; load(d.name, d.files.map(f => ({ ...f }))); }
 
@@ -395,11 +467,11 @@ function loadDemo() { const d = window.__INFRALENS_DEMO__; load(d.name, d.files.
 function renderOverview(v) {
   const m = S.model; const sev = { high: 0, med: 0, low: 0 }; S.findings.forEach(f => sev[f.severity]++);
   const stat = (label, n, section) => `<div class="stat" data-go="${section}"><b>${n}</b><small>${label}</small></div>`;
-  let html = `<h2>Estate overview</h2><p class="sub">${esc(m.meta.org_domain || '')}${m.meta.org_id ? ' · org ' + esc(m.meta.org_id) : ''} · ${S.files.length} files read · adapter <code>${esc(window.InfraLensAdapter.name)}</code></p>`;
+  let html = `<h2>Estate overview</h2><p class="sub">${esc(m.meta.org_domain || '')}${m.meta.org_id ? ' · org ' + esc(m.meta.org_id) : ''} · ${S.files.length} files read · adapter <code>${esc(window.InfraLensAdapter.name)}</code> · ${S.restored ? 'saved copy from' : 'scanned'} ${esc(fmtTime(S.scannedAt))}${m.meta.roots ? ' · root modules: ' + m.meta.roots.map(r => `<code>${esc(r)}</code>`).join(' ') : ''}</p>`;
   html += `<div class="stats">${stat('Projects', m.projects.length, 'projects')}${stat('VPC networks', m.networks.length, 'networks')}${stat('Subnets', m.subnets.length, 'subnets')}${stat('Firewall rules', m.firewall_rules.length, 'firewall_rules')}${stat('IAM bindings', m.iam_bindings.length, 'iam_bindings')}${stat('Service accounts', m.service_accounts.length, 'service_accounts')}${stat('WIF providers', m.wif_providers.length, 'wif')}${stat('VPC-SC perimeters', m.vpc_sc_perimeters.length, 'vpc_sc')}${stat('Org policies', m.org_policies.length, 'org_policies')}</div>`;
   html += `<div class="cols"><div class="box"><h3>Resource hierarchy</h3>${renderTree()}</div>
   <div class="box"><h3>Findings <span class="chip high">${sev.high} high</span><span class="chip med">${sev.med} medium</span><span class="chip low">${sev.low} low</span></h3>${S.findings.slice(0, 12).map(findingRow).join('') || '<div class="muted">No findings.</div>'}${S.findings.length > 12 ? `<div style="margin-top:8px"><a href="#" data-go="findings">All ${S.findings.length} findings</a></div>` : ''}</div></div>`;
-  if (m.errors.length) html += `<div class="box" style="margin-top:16px"><h3 class="err">Adapter errors</h3>${m.errors.map(e => `<div class="src">${esc(e.file)}: ${esc(e.message)}</div>`).join('')}</div>`;
+  if (m.errors.length) html += `<div class="box" style="margin-top:16px"><h3 class="err">Reader notes (${m.errors.length})</h3><p class="sub">Things the Terraform reader could not resolve. Values affected show as <code>\${…}</code>.</p>${m.errors.slice(0, 40).map(e => `<div class="src">${esc(e.file)}: ${esc(e.message)}</div>`).join('')}${m.errors.length > 40 ? `<div class="muted">…${m.errors.length - 40} more</div>` : ''}</div>`;
   v.innerHTML = html; wire(v);
 }
 function renderTree() {
@@ -500,8 +572,13 @@ function renderVpcSc(v) {
 // ---- files ----
 function renderFiles(v) {
   const used = new Set(); for (const k of Object.keys(KIND_LABEL)) S.model[k].forEach(e => e.source && used.add(e.source.file));
-  v.innerHTML = `<h2>Source files</h2><p class="sub">${S.files.length} files read. Files the adapter did not use are listed so you can see what the mapping is missing.</p>
-  <table><thead><tr><th>Path</th><th>Type</th><th>Size</th><th>Used by adapter</th><th>Parse</th></tr></thead><tbody>${S.files.map(f => `<tr><td class="mono">${esc(f.path)}</td><td>${esc(f.ext)}</td><td>${(f.text.length / 1024).toFixed(1)} KB</td><td>${used.has(f.path) ? '✓' : '<span class="chip med">unused</span>'}</td><td>${f.parseError ? `<span class="err">${esc(f.parseError)}</span>` : f.json ? 'json' : '<span class="muted">text</span>'}</td></tr>`).join('')}</tbody></table>`;
+  const read = new Set((S.model.meta && S.model.meta.read_files) || []); const consumed = new Set((S.model.meta && S.model.meta.consumed_files) || []);
+  const status = (f) => used.has(f.path) ? '✓ entities' : consumed.has(f.path) ? '<span class="chip accent">read via file()</span>' : read.has(f.path) ? '<span class="muted">evaluated</span>' : '<span class="chip med">unused</span>';
+  v.innerHTML = `<h2>Source files</h2><p class="sub">${S.files.length} files read from <code>${esc(S.name)}</code>, ${S.restored ? 'saved copy from' : 'scanned'} ${esc(fmtTime(S.scannedAt))}. Files marked <i>unused</i> were not understood by the adapter.</p>
+  <div class="toolbar"><button class="hbtn" id="btnRescan2">Re-scan folder</button><button class="hbtn" id="btnForget" title="Delete the copy of these files kept in this browser">Clear saved copy</button><span class="count">${S.saved ? 'A copy of these files is kept in this browser (IndexedDB) so the dashboard survives a refresh.' : 'Not saved in this browser.'}</span></div>
+  <table><thead><tr><th>Path</th><th>Type</th><th>Size</th><th>Used by adapter</th><th>Parse</th></tr></thead><tbody>${S.files.map(f => `<tr><td class="mono">${esc(f.path)}</td><td>${esc(f.ext)}</td><td>${(f.text.length / 1024).toFixed(1)} KB</td><td>${status(f)}</td><td>${f.parseError ? `<span class="err">${esc(f.parseError)}</span>` : f.json ? 'json' : '<span class="muted">text</span>'}</td></tr>`).join('')}</tbody></table>`;
+  $('#btnRescan2').onclick = rescan;
+  $('#btnForget').onclick = () => { if (confirm('Remove the saved copy of this repo from the browser? The folder on disk is not touched.')) forgetSaved(); };
 }
 
 // ---- global search ----
@@ -526,7 +603,7 @@ function renderDrawer() {
   const principalRels = kind === 'service_accounts' ? (S.index.principals.get('serviceAccount:' + e.id) || []) : [];
   d.innerHTML = `<div class="hd"><div><div class="k">${KIND_LABEL[kind]}</div><h3 class="mono">${esc(e.id)}</h3></div><button class="close" aria-label="Close">×</button></div>
   ${fnd.length ? `<section><h4>Findings</h4>${fnd.map(findingRow).join('')}</section>` : ''}
-  <section><h4>Fields</h4><dl>${fields.map(([k, val]) => `<dt>${esc(k)}</dt><dd>${fmt(val, Array.isArray(val) ? (val[0] && typeof val[0] === 'object' ? (val[0].protocol ? 'ports' : val[0].cidr ? 'ranges' : '') : 'list') : typeof val === 'boolean' ? 'bool' : /id|email|role|principal|resource|cidr|network|project|scope|constraint|pool|issuer/.test(k) ? 'mono' : '')}</dd>`).join('')}</dl></section>
+  <section><h4>Fields</h4><dl>${fields.map(([k, val]) => `<dt>${esc(k)}</dt><dd>${(val && typeof val === 'object' && !Array.isArray(val)) || (Array.isArray(val) && val[0] && typeof val[0] === 'object' && !val[0].protocol && !val[0].cidr) ? `<pre>${esc(JSON.stringify(val, null, 2))}</pre>` : fmt(val, Array.isArray(val) ? (val[0] && typeof val[0] === 'object' ? (val[0].protocol ? 'ports' : val[0].cidr ? 'ranges' : '') : 'list') : typeof val === 'boolean' ? 'bool' : /id|email|role|principal|resource|cidr|network|project|scope|constraint|pool|issuer/.test(k) ? 'mono' : '')}</dd>`).join('')}</dl></section>
   ${principalRels.length ? `<section><h4>This SA holds (${principalRels.length})</h4>${principalRels.map(b => `<div class="rel" data-open="iam_bindings#${esc(b.id)}"><span class="mono">${esc(b.role)}</span><span class="k">${esc(b.resource_type)} ${esc(b.resource)}</span></div>`).join('')}</section>` : ''}
   <section><h4>Related (${rels.length})</h4>${rels.map(r => `<div class="rel" data-open="${esc(r.to)}"><span class="mono">${esc(r.t.e.id)}</span><span class="k">${esc(r.label)} · ${KIND_LABEL[r.t.kind]}</span></div>`).join('') || '<span class="muted">No links</span>'}</section>
   <section><h4>Source</h4><div class="src">${esc(e.source?.file || '?')}${e.source?.path ? ' → ' + esc(e.source.path) : ''}</div><div style="height:8px"></div><pre>${esc(sourceSnippet(e))}</pre></section>`;
@@ -534,9 +611,16 @@ function renderDrawer() {
   wire(d);
 }
 function sourceSnippet(e) {
-  const f = S.files.find(x => x.path === (e.source && e.source.file)); if (!f || !f.json || !e.source.path) return JSON.stringify(e, null, 2);
-  const node = e.source.path.replace(/\[(\d+)\]/g, '.$1').split('.').reduce((a, k) => (a == null ? undefined : a[k]), f.json);
-  return JSON.stringify(node === undefined ? e : node, null, 2);
+  const f = S.files.find(x => x.path === (e.source && e.source.file)); if (!f) return JSON.stringify(e, null, 2);
+  if (e.source.line) { // HCL source: show the block
+    const lines = f.text.split('\n'); const a = Math.max(0, e.source.line - 1), b = Math.min(lines.length, a + 30);
+    return lines.slice(a, b).map((l, i) => String(a + i + 1).padStart(4) + '  ' + l).join('\n') + (b < lines.length ? '\n      …' : '');
+  }
+  if (f.json && e.source.path) { // JSON source: show the node the path points at
+    const node = e.source.path.replace(/\["([^"]*)"\]/g, '.$1').replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean).reduce((a, k) => (a == null ? undefined : a[k]), f.json);
+    if (node !== undefined) return JSON.stringify(node, null, 2);
+  }
+  return JSON.stringify(e.data || e, null, 2);
 }
 
 // ---- wiring + utilities ----
@@ -552,6 +636,7 @@ function toCsv(rows) { if (!rows.length) return ''; const cols = Object.keys(row
 function download(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
 
 $('#btnOpen').onclick = openWithPicker;
+$('#btnRescan').onclick = rescan;
 $('#dirInput').addEventListener('change', openFromInput);
 $('#btnExport').onclick = () => download('infralens-model.json', JSON.stringify(S.model, null, 2));
 $('#btnTheme').onclick = () => { const r = document.documentElement; const dark = r.dataset.theme === 'dark' || (!r.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches); r.dataset.theme = dark ? 'light' : 'dark'; };
@@ -560,6 +645,7 @@ $('#search').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.ta
 document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== $('#search') && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $('#search').focus(); } });
 
 renderNav(); renderView();
+if (!window.__INFRALENS_DEMO__) restore();
 })();
 </script>
 </body>

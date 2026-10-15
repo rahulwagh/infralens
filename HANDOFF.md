@@ -76,3 +76,35 @@ module's `variables.tf` if allowed. When gcloud is available: run
 Claude (outside): CIDR search, shadowed firewall rule detection, snapshot diff
 (declared vs actual / commit vs commit), group membership expansion, minimal HCL
 reader, per-project page, print CSS. Full list in `ROADMAP.md`.
+
+
+---
+
+# Session 2 — 2026-10-15
+
+## What happened
+- Repo pushed to GitHub from the Mac (`git@github.com:rahulwagh/infralens.git`,
+  branch `master`); the office laptop clones it through a local Cntlm proxy
+  (`git config --global http.proxy http://localhost:3128`).
+- Rahul opened `index.html` against the real repo: nothing rendered. The real repo
+  is a full Terraform repository (many folders, `.tf`, tfvars, JSON scattered
+  inside), not the hand-made JSON layout the default adapter expected.
+- Rahul's ask: a generic parser that reads Terraform, all its variables and the
+  JSON, builds the dashboard, keeps it after a refresh, and re-syncs after a pull.
+
+## Built
+- `adapters/hcl.js` — HCL2 reader + Terraform evaluator (see CLAUDE.md).
+- `adapters/terraform.js` — generic mapper: resources by type, module inputs /
+  tfvars / JSON / YAML by shape, everything listed under Terraform objects.
+- `index.html` — loads the new adapters (terraform last, as fallback), keeps the
+  opened files + directory handle in IndexedDB, restores on startup, **Re-scan**
+  button, **Terraform objects** view, Source files statuses + Clear saved copy,
+  drawer shows HCL source from the recorded line, Reader notes on the overview.
+- `sample-terraform/` — synthetic repo covering the patterns; `tools/validate.js`
+  and `tools/make_demo.js` now load all adapters like the browser.
+- Verified with Playwright over `file://`: 16 checks, zero console errors.
+
+## Next
+Rahul: `git pull`, open the real repo, report Reader notes, unmapped Terraform
+objects and unused files (shapes / key names, fake values). Claude: extend key
+lists, per-tfvars variants, remote-module folder, then the earlier roadmap items.

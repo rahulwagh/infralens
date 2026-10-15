@@ -8,8 +8,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const folder = process.argv[2] || path.join(__dirname, '..', 'sample-infra-config');
-const adapterPath = process.argv[3] || path.join(__dirname, '..', 'adapters', 'default.js');
+const folder = path.resolve(process.argv[2] || path.join(__dirname, '..', 'sample-infra-config'));
+// With no adapter argument every adapter is loaded, in the same order as index.html,
+// and the first whose detect() matches is used — exactly what the browser does.
+const adapterArg = process.argv.slice(3).find((a) => !a.startsWith('--'));
+const adapterPaths = adapterArg ? [path.resolve(adapterArg)] : ['default.js', 'gcloud.js', 'terraform.js'].map((f) => path.join(__dirname, '..', 'adapters', f));
 const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md']);
 
 function readTree(dir, prefix = '') {
@@ -32,7 +35,7 @@ function readTree(dir, prefix = '') {
 }
 
 global.window = {};
-require(adapterPath);
+for (const p of adapterPaths) require(p);
 const files = readTree(folder);
 const adapters = global.window.InfraLensAdapters || [];
 const adapter = adapters.find(a => a.detect && a.detect(files)) || adapters[0];
@@ -47,6 +50,7 @@ for (const [k, v] of Object.entries(model)) {
   v.forEach(e => e.source && used.add(e.source.file));
   console.log(`  ${k.padEnd(20)} ${v.length}`);
 }
+((model.meta && model.meta.read_files) || []).forEach(f => used.add(f));
 const unused = files.filter(f => !used.has(f.path));
 if (unused.length) { console.log('\nfiles not used by adapter:'); unused.forEach(f => console.log('  ' + f.path)); }
 if (model.errors && model.errors.length) { console.log('\nadapter errors:'); model.errors.forEach(e => console.log(`  ${e.file}: ${e.message}`)); }

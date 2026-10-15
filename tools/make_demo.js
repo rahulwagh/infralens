@@ -9,8 +9,10 @@
 const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
-const folder = process.argv[2] || path.join(root, 'sample-infra-config');
-const adapterPath = process.argv[3] || path.join(root, 'adapters', 'default.js');
+const folder = path.resolve(process.argv[2] || path.join(root, 'sample-infra-config'));
+const adapterArg = process.argv[3];
+// hcl.js is always inlined first; then either the named adapter or all adapters.
+const adapterPaths = [path.join(root, 'adapters', 'hcl.js')].concat(adapterArg ? [path.resolve(adapterArg)] : ['default.js', 'gcloud.js', 'terraform.js'].map((f) => path.join(root, 'adapters', f)));
 const out = process.argv[4] || path.join(root, 'demo.html');
 const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md']);
 
@@ -26,10 +28,12 @@ function readTree(dir, prefix = '') {
 }
 
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const adapter = fs.readFileSync(adapterPath, 'utf8');
+const adapter = adapterPaths.map((p) => fs.readFileSync(p, 'utf8')).join('\n');
 const demo = { name: path.basename(folder), files: readTree(folder) };
 const safe = (s) => s.replace(/<\/script/gi, '<\\/script');
+// Function replacement: a string replacement would interpret "$&" / "$'" inside the
+// adapter code as back-references and corrupt it.
 const result = html.replace(/<script src="adapters\/[^"]+"><\/script>\s*/g, '').replace('<script>\n(function () {',
-  `<script>${safe(adapter)}</script>\n<script>window.__INFRALENS_DEMO__ = ${safe(JSON.stringify(demo))};</script>\n<script>\n(function () {`);
+  () => `<script>${safe(adapter)}</script>\n<script>window.__INFRALENS_DEMO__ = ${safe(JSON.stringify(demo))};</script>\n<script>\n(function () {`);
 fs.writeFileSync(out, result);
 console.log(`wrote ${out} (${(result.length / 1024).toFixed(0)} KB, ${demo.files.length} files inlined)`);

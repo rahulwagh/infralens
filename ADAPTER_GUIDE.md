@@ -1,5 +1,12 @@
 # Adapter guide
 
+> **Read this first (2026-10-15).** You probably do not need a hand-written adapter
+> any more. `adapters/terraform.js` reads any Terraform repo generically and
+> classifies module inputs and config files by shape. If a section is empty, start
+> by adding your key names to the `pick([...])` lists and `classify()` in that file
+> — a one-line change. Write a dedicated adapter only when the repo's structure is
+> genuinely unlike Terraform (e.g. a custom JSON schema with no `.tf` at all).
+
 The dashboard never reads your raw JSON. An **adapter** turns the files in your
 infra-config repo into the canonical model in `docs/CANONICAL_MODEL.md`, and the UI
 renders that. Fitting InfraLens to a new repo means writing or editing one adapter

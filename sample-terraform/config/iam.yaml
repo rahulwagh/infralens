@@ -1,0 +1,5 @@
+# Organisation-level grants
+organization:
+  roles/resourcemanager.organizationViewer:
+    - group:gcp-platform-admins@example-bank.se
+    - group:gcp-auditors@example-bank.se

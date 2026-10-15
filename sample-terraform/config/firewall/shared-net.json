@@ -1,0 +1,9 @@
+{
+  "project": "prj-shared-net-prod",
+  "rules": [
+    { "name": "allow-internal", "source_ranges": ["10.0.0.0/8"], "allow": [{ "protocol": "tcp" }, { "protocol": "udp" }, { "protocol": "icmp" }], "logging": false },
+    { "name": "allow-health-checks", "priority": 900, "source_ranges": ["130.211.0.0/22", "35.191.0.0/16"], "target_tags": ["lb-backend"], "allow": [{ "protocol": "tcp", "ports": ["80", "443"] }] },
+    { "name": "deny-all-egress-legacy", "direction": "egress", "priority": 65000, "destination_ranges": ["0.0.0.0/0"], "deny": [{ "protocol": "all" }] },
+    { "name": "allow-rdp-temp", "source_ranges": ["0.0.0.0/0"], "target_tags": ["jump"], "allow": [{ "protocol": "tcp", "ports": ["3389"] }], "disabled": true }
+  ]
+}

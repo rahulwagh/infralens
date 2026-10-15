@@ -1,5 +1,7 @@
 # Canonical model
 
+_Revision 2 (2026-10-15): `source.line`, `meta.roots/read_files/consumed_files`, `other.summary/mapped`. All additive._
+
 Every adapter must produce an object of this shape. The dashboard only ever reads
 this model — it never looks at your raw JSON directly. That is what makes the UI
 generic: swap the adapter, keep the UI.
@@ -7,8 +9,10 @@ generic: swap the adapter, keep the UI.
 All arrays are optional (missing = empty). Every entity has:
 
 - `id` — unique string across the whole model (used for linking and search)
-- `source` — `{ file: "<relative path>", path: "<json pointer-ish>" }` so the UI can
-  show where the entity came from
+- `source` — `{ file: "<relative path>", path: "<json pointer-ish or Terraform address>", line?: number }`
+  so the UI can show where the entity came from. With `line` set, the drawer shows
+  the file from that line (HCL sources); otherwise it resolves `path` inside the
+  JSON file.
 
 Entity ids are plain strings. References between entities use the *id* of the
 target (e.g. a firewall rule's `network` is the network's id, which by convention is
@@ -16,7 +20,12 @@ target (e.g. a firewall rule's `network` is the network's id, which by conventio
 
 ```ts
 type Model = {
-  meta?: { org_id?: string, org_domain?: string, generated_from?: string }
+  meta?: {
+    org_id?: string, org_domain?: string, generated_from?: string,
+    roots?: string[]            // Terraform root module directories evaluated
+    read_files?: string[]       // files the adapter evaluated or read (shown as used in Source files)
+    consumed_files?: string[]   // files read through file()/fileset()
+  }
 
   folders: {
     id: string            // "fld-shared"
@@ -166,8 +175,12 @@ type Model = {
     reason?: string
   }[]
 
-  // Anything the adapter could not classify but wants visible.
-  other: { id: string, kind: string, project?: string, data: any }[]
+  // Anything the adapter wants visible that has no section of its own. The
+  // Terraform adapter puts every resource instance and module call here:
+  //   kind    "resource google_compute_router" | "module"
+  //   summary name / module source
+  //   mapped  true when the same object also produced a canonical entity
+  other: { id: string, kind: string, project?: string, summary?: string, mapped?: boolean, data: any }[]
 }
 ```
 

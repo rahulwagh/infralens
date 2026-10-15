@@ -1,0 +1,43 @@
+{
+  "prj-shared-net-prod": {
+    "name": "Shared network", "folder": "shared",
+    "labels": { "env": "prod", "owner": "platform" },
+    "services": ["compute.googleapis.com", "dns.googleapis.com"],
+    "iam": {
+      "roles/compute.networkAdmin": ["group:gcp-network-admins@example-bank.se"],
+      "roles/viewer": ["group:gcp-platform-readers@example-bank.se"]
+    },
+    "service_accounts": [
+      { "account_id": "sa-dns-updater", "display_name": "DNS updater", "roles": ["roles/dns.admin"] }
+    ]
+  },
+  "prj-payments-prod": {
+    "name": "Payments", "folder": "workloads",
+    "labels": { "env": "prod", "owner": "payments", "pci": "true" },
+    "services": ["compute.googleapis.com", "run.googleapis.com", "secretmanager.googleapis.com"],
+    "iam": {
+      "roles/owner": ["group:payments-leads@example-bank.se"],
+      "roles/run.developer": ["group:payments-devs@example-bank.se", "user:lars.berg@example-bank.se"]
+    },
+    "service_accounts": [
+      { "account_id": "sa-payments-deployer", "display_name": "Payments deployer", "roles": ["roles/run.admin", "roles/iam.serviceAccountUser"] },
+      { "account_id": "sa-payments-api", "display_name": "Payments API runtime", "roles": ["roles/secretmanager.secretAccessor"] }
+    ],
+    "extra_rules": [ { "name": "allow-payments-health", "sources": ["10.10.1.0/24"], "ports": ["8080"] } ]
+  },
+  "prj-data-platform-prod": {
+    "name": "Data platform", "folder": "workloads",
+    "labels": { "env": "prod", "owner": "data" },
+    "services": ["bigquery.googleapis.com", "storage.googleapis.com"],
+    "iam": { "roles/bigquery.dataViewer": ["group:data-analysts@example-bank.se", "allAuthenticatedUsers"] },
+    "service_accounts": [
+      { "account_id": "sa-data-export", "display_name": "Data export", "roles": ["roles/storage.objectAdmin"] }
+    ]
+  },
+  "prj-legacy-batch-nonprod": {
+    "name": "Legacy batch", "folder": "workloads",
+    "labels": { "env": "nonprod", "owner": "batch" },
+    "services": ["compute.googleapis.com"],
+    "iam": { "roles/editor": ["group:batch-team@example-bank.se"] }
+  }
+}
