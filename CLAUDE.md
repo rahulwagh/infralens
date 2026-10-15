@@ -54,6 +54,14 @@ files (.tf/.tfvars/JSON/YAML text)  →  adapter (adapters/*.js)  →  canonical
   - `adapters/default.js` — the hand-made JSON layout in `sample-infra-config/`.
   - `adapters/gcloud.js` — output of `tools/export-gcloud.ps1` / `export_gcloud.py`
     (actual state). Untested against a real estate; parked until gcloud is available.
+- Multi-repo: a workspace folder with one sub-folder per repo is scanned as one
+  estate (every dir with .tf = root module). `sync.cmd` / `sync.sh` clone or pull
+  the repos listed in `<workspace>/repos.txt` and write `sync-status.json`; the
+  **Repositories** section (`renderRepos`) shows list + status and edits
+  `repos.txt` (File System Access `readwrite` on the folder handle, download
+  fallback). `repos.txt` / `sync-status.json` are `INFRALENS_FILES`, never estate
+  data; the terraform adapter skips `sync-status.json`. Files carry `mtime`
+  (`File.lastModified`) so the page can show when the last sync ran.
 - Persistence: `index.html` keeps the last opened files (and the directory handle in
   Chrome/Edge) in IndexedDB (`infralens` / `kv`), restores on startup, and the
   **Re-scan** button re-reads the same folder. Last section is in localStorage.
@@ -77,11 +85,20 @@ files (.tf/.tfvars/JSON/YAML text)  →  adapter (adapters/*.js)  →  canonical
   http.server on 8765) instead.
 - `tools/make_demo.js` must use a function replacement in `String.replace`; the
   adapter code contains `$&`.
+- `sync.cmd` cannot run here; `sync.sh` was tested against local bare repos
+  (clone, pull of a new commit, one bad URL) and its `sync-status.json` through the
+  Repositories page with Playwright. Keep the two scripts' behaviour and JSON
+  identical when changing either. Batch pitfalls in `sync.cmd`: delayed expansion
+  (`!` in commit subjects is mangled, acceptable), JSON built in a variable, special
+  characters stripped from subjects.
 - Keep the UI dense and plain: tables, chips, one accent colour, red/amber only for
   findings. Light theme by default, dark follows OS. Prose and labels in sentence
   case. No decorative motion.
 
-## Current state (2026-10-15)
+## Current state (2026-10-15, later)
+- Added multi-repo sync: `sync.cmd`/`sync.sh`, Repositories page, sync status on
+  the overview. Untested on Windows itself (no Windows here) — first run on the
+  office laptop is the test; `sync.log` has the git output.
 - Generic Terraform reader (`hcl.js` + `terraform.js`), saved copy + re-scan,
   Terraform objects view, line-based source snippets: done, tested on
   `sample-terraform/` (synthetic: direct resources, for_each over

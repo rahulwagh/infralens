@@ -14,7 +14,7 @@ const adapterArg = process.argv[3];
 // hcl.js is always inlined first; then either the named adapter or all adapters.
 const adapterPaths = [path.join(root, 'adapters', 'hcl.js')].concat(adapterArg ? [path.resolve(adapterArg)] : ['default.js', 'gcloud.js', 'terraform.js'].map((f) => path.join(root, 'adapters', f)));
 const out = process.argv[4] || path.join(root, 'demo.html');
-const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md']);
+const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md', 'txt']);
 
 function readTree(dir, prefix = '') {
   const files = [];

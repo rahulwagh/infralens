@@ -19,7 +19,10 @@ independently.
    fine), the module input name it is passed as, or a sanitized copy of a small
    file plus the module's `variables.tf` if allowed. Claude adds the spellings to
    `adapters/terraform.js` and a matching case to `sample-terraform/`.
-4. After every `git pull` of this repo or of the Terraform repo: **Re-scan**.
+4. Put the Bitbucket URLs of all 8–10 repos on the **Repositories** page (or in
+   `%USERPROFILE%\infralens-workspace\repos.txt`), run `sync.cmd`, open the
+   workspace folder in the dashboard. Daily: `sync.cmd`, then **Re-scan**. Report
+   anything in `sync.log` that fails on the first Windows run.
 5. Write down which findings are noise for your policy and which checks are missing.
    Those go into `FINDINGS`.
 
@@ -48,6 +51,9 @@ independently.
 - [x] HCL/`.tfvars` reader with Terraform evaluation (`adapters/hcl.js`), generic
       Terraform adapter (`adapters/terraform.js`), saved copy + re-scan, Terraform
       objects view. 2026-10-15.
+- [x] Multi-repo workspace + `sync.cmd`/`sync.sh` + Repositories page. 2026-10-15.
+- [ ] Per-repo tag on entities so the same id declared in two repos shows twice
+      instead of first-wins.
 - [ ] Per-tfvars variants: evaluate a root once per `envs/*.tfvars` so prod and
       nonprod estates both appear (today: auto-loaded tfvars only; other tfvars are
       shape-scanned standalone).

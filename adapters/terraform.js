@@ -362,6 +362,7 @@
     // JSON / YAML not read through file()
     for (const f of files) {
       if (repo.consumedFiles.has(f.path) || /\.(tf|tfvars)(\.json)?$/i.test(f.path)) continue;
+      if (/(^|\/)sync-status\.json$/.test(f.path)) continue; // written by sync.cmd, not estate data
       let data = null;
       if (/\.json$/i.test(f.path)) data = f.json !== undefined ? f.json : (() => { try { return JSON.parse(f.text); } catch (e) { return null; } })();
       else if (/\.ya?ml$/i.test(f.path)) { try { data = H.yamlDecode(f.text); } catch (e) { model.errors.push({ file: f.path, message: 'YAML: ' + e.message }); } }

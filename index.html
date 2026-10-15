@@ -187,6 +187,7 @@ const SECTIONS = [
   { id: 'vpc_sc', label: 'VPC Service Controls', group: 'Policy' },
   { id: 'org_policies', label: 'Org policies', group: 'Policy', kind: 'org_policies',
     cols: [['constraint','Constraint','mono'], ['scope_type','Scope'], ['scope','On','mono'], ['policy_type','Type'], ['enforce','Enforce','bool'], ['allow','Allow','list'], ['deny','Deny','list'], ['deny_all','Deny all','bool'], ['reason','Reason']] },
+  { id: 'repos', label: 'Repositories', group: 'Repository' },
   { id: 'files', label: 'Source files', group: 'Repository' },
   { id: 'other', label: 'Terraform objects', group: 'Repository', kind: 'other',
     cols: [['kind','Kind'], ['id','Address','mono'], ['project','Project','mono'], ['summary','Name / source','mono'], ['mapped','Mapped','bool']] },
@@ -253,7 +254,8 @@ const S = { files: [], model: null, index: null, findings: [], section: 'overvie
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const get = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
-const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md']);
+const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md', 'txt']);
+const INFRALENS_FILES = new Set(['repos.txt', 'sync-status.json']); // written by sync.cmd / this page
 
 async function readHandle(dir) {
   const files = [];
@@ -262,7 +264,7 @@ async function readHandle(dir) {
       if (name === '.git' || name === 'node_modules' || name === '.terraform') continue;
       const p = prefix ? prefix + '/' + name : name;
       if (h.kind === 'directory') await walk(h, p);
-      else { const ext = name.split('.').pop().toLowerCase(); if (TEXT_EXT.has(ext)) files.push({ path: p, name, ext, text: await (await h.getFile()).text() }); }
+      else { const ext = name.split('.').pop().toLowerCase(); if (TEXT_EXT.has(ext)) { const file = await h.getFile(); files.push({ path: p, name, ext, text: await file.text(), mtime: file.lastModified }); } }
     }
   }
   await walk(dir, '');
@@ -300,7 +302,7 @@ async function openFromInput(ev) {
     const rel = (f.webkitRelativePath || f.name).split('/').slice(1).join('/');
     if (/(^|\/)(\.git|node_modules|\.terraform)\//.test(rel)) continue;
     const ext = f.name.split('.').pop().toLowerCase();
-    if (TEXT_EXT.has(ext)) files.push({ path: rel, name: f.name, ext, text: await f.text() });
+    if (TEXT_EXT.has(ext)) files.push({ path: rel, name: f.name, ext, text: await f.text(), mtime: f.lastModified });
   }
   S.handle = null;
   load(root, files);
@@ -324,7 +326,7 @@ async function kvGet(k) { try { const db = await idb(); return await new Promise
 async function kvSet(k, v) { try { const db = await idb(); await new Promise((res, rej) => { const t = db.transaction(DB_STORE, 'readwrite'); t.objectStore(DB_STORE).put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); return true; } catch (e) { console.warn('could not save', k, e); return false; } }
 async function kvDel(k) { try { const db = await idb(); await new Promise((res, rej) => { const t = db.transaction(DB_STORE, 'readwrite'); t.objectStore(DB_STORE).delete(k); t.oncomplete = res; t.onerror = () => rej(t.error); }); } catch (e) { /* ignore */ } }
 async function persist(name, files, handle) {
-  const ok = await kvSet('repo', { name, scannedAt: S.scannedAt, files: files.map(f => ({ path: f.path, name: f.name, ext: f.ext, text: f.text })) });
+  const ok = await kvSet('repo', { name, scannedAt: S.scannedAt, files: files.map(f => ({ path: f.path, name: f.name, ext: f.ext, text: f.text, mtime: f.mtime })) });
   if (handle) await kvSet('handle', handle); else await kvDel('handle');
   S.saved = ok; renderStatus();
 }
@@ -440,7 +442,7 @@ function renderNav() {
   const counts = {}; if (S.model) { for (const k of Object.keys(KIND_LABEL)) counts[k] = S.model[k].length; counts.findings = S.findings.length; }
   for (const s of SECTIONS) {
     if (s.group !== grp) { grp = s.group; html += `<div class="grp">${grp}</div>`; }
-    const c = s.kind ? counts[s.kind] : s.countOf ? counts[s.countOf] : s.id === 'wif' ? counts.wif_providers : s.id === 'vpc_sc' ? counts.vpc_sc_perimeters : s.id === 'files' ? S.files.length : '';
+    const c = s.kind ? counts[s.kind] : s.countOf ? counts[s.countOf] : s.id === 'wif' ? counts.wif_providers : s.id === 'vpc_sc' ? counts.vpc_sc_perimeters : s.id === 'files' ? S.files.length : s.id === 'repos' ? (S.model ? parseRepos(repoListText()).length : '') : '';
     html += `<button data-s="${s.id}" class="${s.id === S.section ? 'active' : ''}" ${S.model ? '' : 'disabled'}>${s.label}<span class="n">${c === undefined ? '' : c}</span></button>`;
   }
   nav.innerHTML = html;
@@ -452,14 +454,14 @@ function renderView() {
   if (S.query) return renderSearch(v);
   const s = SECTIONS.find(x => x.id === S.section);
   if (s.kind) return renderTable(v, s);
-  ({ overview: renderOverview, findings: renderFindings, iam_matrix: renderMatrix, wif: renderWif, vpc_sc: renderVpcSc, files: renderFiles })[s.id](v);
+  ({ overview: renderOverview, findings: renderFindings, iam_matrix: renderMatrix, wif: renderWif, vpc_sc: renderVpcSc, files: renderFiles, repos: renderRepos })[s.id](v);
 }
 function landing() {
   const demo = window.__INFRALENS_DEMO__ ? `<button class="big alt" id="btnDemo">Load sample estate</button>` : '';
   return `<div id="landing"><h2>Read your Terraform repository</h2>
   <p>Pick the folder of a Terraform repo — <code>.tf</code>, <code>.tfvars</code>, JSON and YAML in any layout. The Terraform is evaluated here in the browser (variables, locals, <code>for_each</code>, <code>jsondecode(file(…))</code>, local modules) and every GCP resource, module input and config file is mapped into the dashboard. Nothing is uploaded, no server runs, nothing is written back.</p>
   <button class="big" id="btnLanding">Open repo folder</button>${demo}
-  <ol><li>Clone or pull the repo on this machine.</li><li>Open that folder here. <code>.git</code>, <code>.terraform</code> and <code>node_modules</code> are skipped.</li><li>The files are kept in this browser, so a refresh shows the same dashboard. After <code>git pull</code>, click <b>Re-scan</b>.</li><li>Check <b>Source files</b> and <b>Terraform objects</b> for anything that was read but not mapped.</li></ol></div>`;
+  <ol><li>Clone or pull the repo on this machine — or let <code>sync.cmd</code> do it: it clones and pulls every repository listed on the <b>Repositories</b> page into one workspace folder.</li><li>Open that folder here (several repos under one parent folder are fine). <code>.git</code>, <code>.terraform</code> and <code>node_modules</code> are skipped.</li><li>The files are kept in this browser, so a refresh shows the same dashboard. After a pull or sync, click <b>Re-scan</b>.</li><li>Check <b>Source files</b> and <b>Terraform objects</b> for anything that was read but not mapped.</li></ol></div>`;
 }
 function loadDemo() { const d = window.__INFRALENS_DEMO__; load(d.name, d.files.map(f => ({ ...f }))); }
 
@@ -467,7 +469,8 @@ function loadDemo() { const d = window.__INFRALENS_DEMO__; load(d.name, d.files.
 function renderOverview(v) {
   const m = S.model; const sev = { high: 0, med: 0, low: 0 }; S.findings.forEach(f => sev[f.severity]++);
   const stat = (label, n, section) => `<div class="stat" data-go="${section}"><b>${n}</b><small>${label}</small></div>`;
-  let html = `<h2>Estate overview</h2><p class="sub">${esc(m.meta.org_domain || '')}${m.meta.org_id ? ' · org ' + esc(m.meta.org_id) : ''} · ${S.files.length} files read · adapter <code>${esc(window.InfraLensAdapter.name)}</code> · ${S.restored ? 'saved copy from' : 'scanned'} ${esc(fmtTime(S.scannedAt))}${m.meta.roots ? ' · root modules: ' + m.meta.roots.map(r => `<code>${esc(r)}</code>`).join(' ') : ''}</p>`;
+  const sync = syncStatus();
+  let html = `<h2>Estate overview</h2><p class="sub">${esc(m.meta.org_domain || '')}${m.meta.org_id ? ' · org ' + esc(m.meta.org_id) : ''} · ${S.files.length} files read · adapter <code>${esc(window.InfraLensAdapter.name)}</code> · ${S.restored ? 'saved copy from' : 'scanned'} ${esc(fmtTime(S.scannedAt))}${sync ? ` · <a href="#" data-go="repos">synced ${esc(sync.when)}${sync.failed ? `, <span class="err">${sync.failed} failed</span>` : ''}</a>` : ''}${m.meta.roots ? ' · root modules: ' + m.meta.roots.map(r => `<code>${esc(r)}</code>`).join(' ') : ''}</p>`;
   html += `<div class="stats">${stat('Projects', m.projects.length, 'projects')}${stat('VPC networks', m.networks.length, 'networks')}${stat('Subnets', m.subnets.length, 'subnets')}${stat('Firewall rules', m.firewall_rules.length, 'firewall_rules')}${stat('IAM bindings', m.iam_bindings.length, 'iam_bindings')}${stat('Service accounts', m.service_accounts.length, 'service_accounts')}${stat('WIF providers', m.wif_providers.length, 'wif')}${stat('VPC-SC perimeters', m.vpc_sc_perimeters.length, 'vpc_sc')}${stat('Org policies', m.org_policies.length, 'org_policies')}</div>`;
   html += `<div class="cols"><div class="box"><h3>Resource hierarchy</h3>${renderTree()}</div>
   <div class="box"><h3>Findings <span class="chip high">${sev.high} high</span><span class="chip med">${sev.med} medium</span><span class="chip low">${sev.low} low</span></h3>${S.findings.slice(0, 12).map(findingRow).join('') || '<div class="muted">No findings.</div>'}${S.findings.length > 12 ? `<div style="margin-top:8px"><a href="#" data-go="findings">All ${S.findings.length} findings</a></div>` : ''}</div></div>`;
@@ -573,12 +576,64 @@ function renderVpcSc(v) {
 function renderFiles(v) {
   const used = new Set(); for (const k of Object.keys(KIND_LABEL)) S.model[k].forEach(e => e.source && used.add(e.source.file));
   const read = new Set((S.model.meta && S.model.meta.read_files) || []); const consumed = new Set((S.model.meta && S.model.meta.consumed_files) || []);
-  const status = (f) => used.has(f.path) ? '✓ entities' : consumed.has(f.path) ? '<span class="chip accent">read via file()</span>' : read.has(f.path) ? '<span class="muted">evaluated</span>' : '<span class="chip med">unused</span>';
+  const status = (f) => used.has(f.path) ? '✓ entities' : consumed.has(f.path) ? '<span class="chip accent">read via file()</span>' : read.has(f.path) ? '<span class="muted">evaluated</span>' : INFRALENS_FILES.has(f.path) ? '<span class="chip">InfraLens</span>' : '<span class="chip med">unused</span>';
   v.innerHTML = `<h2>Source files</h2><p class="sub">${S.files.length} files read from <code>${esc(S.name)}</code>, ${S.restored ? 'saved copy from' : 'scanned'} ${esc(fmtTime(S.scannedAt))}. Files marked <i>unused</i> were not understood by the adapter.</p>
   <div class="toolbar"><button class="hbtn" id="btnRescan2">Re-scan folder</button><button class="hbtn" id="btnForget" title="Delete the copy of these files kept in this browser">Clear saved copy</button><span class="count">${S.saved ? 'A copy of these files is kept in this browser (IndexedDB) so the dashboard survives a refresh.' : 'Not saved in this browser.'}</span></div>
   <table><thead><tr><th>Path</th><th>Type</th><th>Size</th><th>Used by adapter</th><th>Parse</th></tr></thead><tbody>${S.files.map(f => `<tr><td class="mono">${esc(f.path)}</td><td>${esc(f.ext)}</td><td>${(f.text.length / 1024).toFixed(1)} KB</td><td>${status(f)}</td><td>${f.parseError ? `<span class="err">${esc(f.parseError)}</span>` : f.json ? 'json' : '<span class="muted">text</span>'}</td></tr>`).join('')}</tbody></table>`;
   $('#btnRescan2').onclick = rescan;
   $('#btnForget').onclick = () => { if (confirm('Remove the saved copy of this repo from the browser? The folder on disk is not touched.')) forgetSaved(); };
+}
+
+// ---- repositories (repos.txt + sync-status.json in the workspace folder) ----
+const repoListText = () => { const f = S.files.find(x => x.path === 'repos.txt'); return f ? f.text : ''; };
+function parseRepos(text) {
+  return text.split(/\r?\n/).map(l => l.replace(/#.*$/, '').trim()).filter(Boolean).map(l => { const [url, folder] = l.split(/\s+/); const name = folder || url.split('/').pop().replace(/\.git$/, '').replace(/^.*:/, ''); return { url, name }; });
+}
+function syncStatus() {
+  const f = S.files.find(x => x.path === 'sync-status.json'); if (!f || !f.json) return null;
+  const j = f.json; const when = f.mtime ? fmtTime(new Date(f.mtime).toISOString()) : (j.synced_at || '');
+  return { when, ok: j.ok || 0, failed: j.failed || 0, repos: j.repos || [], tool: j.tool, workspace: j.workspace };
+}
+function renderRepos(v) {
+  const text = repoListText(); const list = parseRepos(text); const sync = syncStatus();
+  const byName = new Map((sync ? sync.repos : []).map(r => [r.name, r]));
+  const present = new Set(S.files.map(f => f.path.split('/')[0]));
+  const rows = list.map(r => { const st = byName.get(r.name); const onDisk = present.has(r.name);
+    return `<tr><td class="mono">${esc(r.name)}</td><td class="mono">${esc(r.url)}</td><td>${st ? (st.result === 'ok' ? '<span class="chip low">ok</span>' : `<span class="chip high">${esc(st.result)}</span>`) : onDisk ? '<span class="muted">on disk</span>' : '<span class="chip med">not cloned yet</span>'}</td><td class="mono">${st ? esc((st.branch || '') + ' ' + (st.commit || '')) : ''}</td><td>${st ? esc((st.commit_date || '').slice(0, 16)) : ''}</td><td>${st ? esc(st.subject || st.message || '') : ''}</td></tr>`; });
+  const stale = (sync ? sync.repos : []).filter(r => !list.some(l => l.name === r.name));
+  v.innerHTML = `<h2>Repositories</h2><p class="sub">The Bitbucket repositories that make up the estate. The list is saved as <code>repos.txt</code> in the workspace folder (<code>${esc(S.name)}</code>); <code>sync.cmd</code> clones or pulls each one into that folder and writes <code>sync-status.json</code>, which this page shows.</p>
+  <div class="box" style="margin-bottom:14px"><h3>Sync status ${sync ? `<span class="chip ${sync.failed ? 'high' : 'low'}">${sync.ok} ok${sync.failed ? ', ' + sync.failed + ' failed' : ''}</span> <span class="muted">last sync ${esc(sync.when)}${sync.tool ? ' via ' + esc(sync.tool) : ''}</span>` : '<span class="chip med">never synced</span>'}</h3>
+  ${list.length ? `<table><thead><tr><th>Repository</th><th>URL</th><th>Last sync</th><th>Branch · commit</th><th>Committed</th><th>Last commit / message</th></tr></thead><tbody>${rows.join('')}${stale.map(r => `<tr><td class="mono muted">${esc(r.name)}</td><td class="mono muted">${esc(r.url)}</td><td colspan="4" class="muted">synced earlier but no longer in the list — delete the folder if not needed</td></tr>`).join('')}</tbody></table>` : '<div class="muted">No repositories listed yet. Add them below and save.</div>'}</div>
+  <div class="cols"><div class="box"><h3>Repository list</h3><p class="sub">One URL per line. Optional second word = folder name. Lines starting with <code>#</code> are ignored.</p>
+  <textarea id="reposEdit" rows="12" spellcheck="false" style="width:100%;font:12.5px var(--code);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:var(--radius);padding:8px;resize:vertical">${esc(text || '# https://bitbucket.example.com/scm/plat/tf-landing-zone.git\n# https://bitbucket.example.com/scm/plat/tf-network.git  network\n')}</textarea>
+  <div class="toolbar"><button class="hbtn" id="btnSaveRepos">Save</button><button class="hbtn" id="btnDlRepos" title="Download repos.txt to place in the workspace folder yourself">Download</button><span class="count" id="reposMsg">${list.length} repositories</span></div></div>
+  <div class="box"><h3>Daily sync</h3><ol style="margin:0;padding-left:18px">
+  <li>Run <code>sync.cmd</code> from the InfraLens folder (double-click, or a desktop shortcut). It reads <code>repos.txt</code> in <code>%USERPROFILE%\\infralens-workspace</code> — pass another workspace path as the first argument if you keep the repos elsewhere.</li>
+  <li>Each repository is cloned the first time and pulled (<code>--ff-only</code>) after that, with your own git credentials: Git Credential Manager asks once and remembers. Your corporate proxy settings for git apply. InfraLens never sees credentials.</li>
+  <li>When it finishes it opens this dashboard. Click <b>Re-scan</b> in the header to read the updated repositories.</li></ol>
+  <p class="sub" style="margin-bottom:0">A browser page cannot run git itself, which is why the pull step is a script. <code>sync.sh</code> is the same script for Git Bash.</p></div></div>`;
+  wire(v);
+  $('#btnDlRepos').onclick = () => download('repos.txt', $('#reposEdit').value);
+  $('#btnSaveRepos').onclick = () => saveRepos($('#reposEdit').value);
+}
+async function saveRepos(text) {
+  if (!text.endsWith('\n')) text += '\n';
+  const msg = $('#reposMsg');
+  let wrote = false;
+  if (S.handle && S.handle.getFileHandle) {
+    try {
+      let perm = await S.handle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await S.handle.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') { const fh = await S.handle.getFileHandle('repos.txt', { create: true }); const w = await fh.createWritable(); await w.write(text); await w.close(); wrote = true; }
+    } catch (e) { console.warn('could not write repos.txt', e); }
+  }
+  const f = S.files.find(x => x.path === 'repos.txt');
+  if (f) { f.text = text; f.mtime = Date.now(); } else S.files.push({ path: 'repos.txt', name: 'repos.txt', ext: 'txt', text, mtime: Date.now() });
+  S.files.sort((a, b) => a.path.localeCompare(b.path));
+  await persist(S.name, S.files, S.handle);
+  if (!wrote) download('repos.txt', text);
+  renderNav(); renderView();
+  const m2 = $('#reposMsg'); if (m2) m2.textContent = wrote ? `Saved to ${S.name}/repos.txt` : `Kept in this browser; repos.txt was downloaded — put it in the workspace folder (${S.name}).`;
 }
 
 // ---- global search ----

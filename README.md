@@ -37,6 +37,39 @@ Point it at the folder of your Terraform repo and get:
 `.git`, `.terraform` and `node_modules` are skipped. Only `.json`, `.tf`, `.tfvars`,
 `.yaml`, `.yml`, `.hcl`, `.md` are read.
 
+## Several repositories, one estate, synced daily
+
+Most estates are spread over 8–10 repos. InfraLens treats a **workspace folder**
+with one sub-folder per repo as a single estate: every directory with `.tf` files
+is a root module, ids are built from GCP project ids so entities from different
+repos link up, and file paths are prefixed with the repo name.
+
+`sync.cmd` keeps that folder up to date:
+
+```
+sync.cmd                         workspace = %USERPROFILE%\infralens-workspace
+sync.cmd C:\path\to\workspace     any other folder
+```
+
+- Reads `repos.txt` in the workspace (one URL per line, optional second word =
+  folder name). The first run creates the file and opens it.
+- Clones each repo the first time, `git pull --ff-only` after that. Failures are
+  reported and the run continues.
+- Uses your own git setup: Git Credential Manager asks for Bitbucket credentials
+  once (use an HTTP access token as the password) and remembers them; your
+  `http.proxy` applies. InfraLens never sees credentials.
+- Writes `sync-status.json` and `sync.log` into the workspace, then opens the
+  dashboard. Click **Re-scan**.
+
+The **Repositories** page in the dashboard shows the list and the last sync result
+per repo (branch, commit, date, message), and lets you edit the list. **Save**
+writes `repos.txt` into the workspace folder directly in Edge/Chrome (it asks for
+write access to that folder once); elsewhere it downloads the file for you to drop
+in. `sync.sh` is the same script for Git Bash / macOS.
+
+A browser page cannot run git, which is why the pull step is a script rather than
+a button. Everything else — list, status, dashboard — lives in the page.
+
 ## How a Terraform repo is read
 
 `adapters/hcl.js` is a small HCL2 reader and Terraform expression evaluator: it
@@ -94,6 +127,7 @@ under **Terraform objects** but not in their own section. Two ways to fix that:
 
 ```
 index.html              the whole dashboard (open this)
+sync.cmd / sync.sh      clone or pull every repo in <workspace>/repos.txt, write sync-status.json
 adapters/hcl.js         HCL2 reader + Terraform expression evaluator
 adapters/terraform.js   generic Terraform repo  →  canonical model
 adapters/default.js     the sample-infra-config JSON layout  →  canonical model

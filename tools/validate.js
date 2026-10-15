@@ -13,7 +13,7 @@ const folder = path.resolve(process.argv[2] || path.join(__dirname, '..', 'sampl
 // and the first whose detect() matches is used — exactly what the browser does.
 const adapterArg = process.argv.slice(3).find((a) => !a.startsWith('--'));
 const adapterPaths = adapterArg ? [path.resolve(adapterArg)] : ['default.js', 'gcloud.js', 'terraform.js'].map((f) => path.join(__dirname, '..', 'adapters', f));
-const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md']);
+const TEXT_EXT = new Set(['json', 'tf', 'tfvars', 'yaml', 'yml', 'hcl', 'md', 'txt']);
 
 function readTree(dir, prefix = '') {
   const out = [];

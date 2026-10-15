@@ -108,3 +108,10 @@ reader, per-project page, print CSS. Full list in `ROADMAP.md`.
 Rahul: `git pull`, open the real repo, report Reader notes, unmapped Terraform
 objects and unused files (shapes / key names, fake values). Claude: extend key
 lists, per-tfvars variants, remote-module folder, then the earlier roadmap items.
+
+## Later the same day — multi-repo sync
+- Rahul has 8–10 Bitbucket repos. Opening a parent folder already scans them all;
+  added `sync.cmd` / `sync.sh` (clone or pull every repo in `<workspace>/repos.txt`,
+  write `sync-status.json`, open the dashboard) and a **Repositories** page (edit +
+  save the list, see last sync per repo). Tested on macOS with local bare repos and
+  Playwright; `sync.cmd` itself still needs its first Windows run.
