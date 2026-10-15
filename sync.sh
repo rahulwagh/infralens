@@ -6,6 +6,10 @@
 #   ./sync.sh --build-only    only rewrite estate.js
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Local git options for this script only (never --global): copy
+# sync.local.example.sh to sync.local.sh and edit; it is gitignored.
+GITOPTS=""
+[ -f "$HERE/sync.local.sh" ] && . "$HERE/sync.local.sh"
 REPOS="$HERE/repos.txt"; DEST="$HERE/repos"; STATUS="$HERE/sync-status.json"; LOG="$HERE/sync.log"; ESTATE="$HERE/estate.js"
 BUILDONLY=""; for a in "$@"; do [ "$a" = "--build-only" ] && BUILDONLY=1; done
 
@@ -53,9 +57,9 @@ while IFS= read -r line || [ -n "$line" ]; do
   { echo; echo "=== $NAME  $SAFE"; } >> "$LOG"
   TMPLOG="$(mktemp 2>/dev/null || echo "$HERE/.git.tmp")"
   if [ -d "$DIR/.git" ]; then
-    echo "  pull   $NAME"; git -C "$DIR" pull --ff-only > "$TMPLOG" 2>&1 || { RESULT=failed; MSG="git pull failed - see sync.log"; }
+    echo "  pull   $NAME"; git $GITOPTS -C "$DIR" pull --ff-only > "$TMPLOG" 2>&1 || { RESULT=failed; MSG="git pull failed - see sync.log"; }
   else
-    echo "  clone  $NAME"; git clone "$URL" "$DIR" > "$TMPLOG" 2>&1 || { RESULT=failed; MSG="git clone failed - see sync.log"; }
+    echo "  clone  $NAME"; git $GITOPTS clone "$URL" "$DIR" > "$TMPLOG" 2>&1 || { RESULT=failed; MSG="git clone failed - see sync.log"; }
   fi
   awk -v c="${CRED}@" 'c != "@" { while ((i = index($0, c)) > 0) $0 = substr($0, 1, i - 1) "***@" substr($0, i + length(c)) } 1' "$TMPLOG" >> "$LOG"; rm -f "$TMPLOG"
   COMMIT=""; BRANCH=""; WHEN=""; SUBJECT=""

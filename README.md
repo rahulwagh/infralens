@@ -69,6 +69,12 @@ infralens\
    by itself. That is a file on disk, so it is there after every restart until the
    next sync replaces it.
 
+Git options that should apply to the sync only — not to git globally — go in
+`sync.local.cmd` / `sync.local.sh` (copy the `.example` file; gitignored). The
+example turns off certificate verification for networks with TLS inspection,
+`-c http.sslVerify=false`, and shows the better alternative of pointing git at the
+corporate root certificate.
+
 The **Repositories** page shows the last sync per repository (branch, commit, date,
 message) and lets you edit the list. All generated files and `repos.txt` are
 gitignored, so your internal URLs never go to GitHub and `git pull` on InfraLens

@@ -10,6 +10,10 @@ rem    sync.log           git output
 rem  Run it, then open or refresh index.html. Git handles credentials and proxy.
 rem ---------------------------------------------------------------------------
 set "HERE=%~dp0"
+rem Local git options for this script only (never --global). Copy
+rem sync.local.example.cmd to sync.local.cmd and edit; it is gitignored.
+set "GITOPTS="
+if exist "%HERE%sync.local.cmd" call "%HERE%sync.local.cmd"
 set "REPOS=%HERE%repos.txt"
 set "DEST=%HERE%repos"
 set "STATUS=%HERE%sync-status.json"
@@ -59,11 +63,11 @@ for /f "usebackq eol=# tokens=1,2 delims=	 " %%A in ("%REPOS%") do (
   >>"%LOG%" echo === !NAME!  !SAFE!
   if exist "!DIR!\.git" (
     echo   pull   !NAME!
-    git -C "!DIR!" pull --ff-only >"%TMPLOG%" 2>&1
+    git !GITOPTS! -C "!DIR!" pull --ff-only >"%TMPLOG%" 2>&1
     if errorlevel 1 ( set "RESULT=failed" & set "MSG=git pull failed - see sync.log" )
   ) else (
     echo   clone  !NAME!
-    git clone "!URL!" "!DIR!" >"%TMPLOG%" 2>&1
+    git !GITOPTS! clone "!URL!" "!DIR!" >"%TMPLOG%" 2>&1
     if errorlevel 1 ( set "RESULT=failed" & set "MSG=git clone failed - see sync.log" )
   )
   rem copy git's output to the log with the credentials blanked out

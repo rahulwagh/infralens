@@ -73,6 +73,9 @@ files (.tf/.tfvars/JSON/YAML text)  →  adapter (adapters/*.js)  →  canonical
   the raw URL only to git, and scrub git's output before appending to sync.log
   (`call set` trick in batch, `index()` loop in awk). `redactUrl()` in index.html
   covers display of repos.txt URLs. Tested with a token URL against a refused port.
+  Per-script git options come from optional gitignored `sync.local.cmd` /
+  `sync.local.sh` (`GITOPTS`, e.g. `-c http.sslVerify=false` for the corporate
+  TLS-inspecting proxy — Rahul asked for this; kept off `--global` on purpose).
   `repos.txt` / `sync-status.json` are `INFRALENS_FILES`, never estate data; the
   terraform adapter skips `sync-status.json`. Files carry `mtime` when read from a
   folder.

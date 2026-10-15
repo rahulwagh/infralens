@@ -7,3 +7,5 @@ repos.txt
 estate.js
 sync-status.json
 sync.log
+sync.local.cmd
+sync.local.sh
